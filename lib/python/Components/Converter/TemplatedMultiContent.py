@@ -12,6 +12,22 @@ class TemplatedMultiContent(StringList):
 		from enigma import BT_SCALE, BT_KEEP_ASPECT_RATIO, RT_BLEND, RT_HALIGN_CENTER, RT_HALIGN_LEFT, RT_HALIGN_RIGHT, RT_VALIGN_BOTTOM, RT_VALIGN_CENTER, RT_VALIGN_TOP, RT_WRAP, eListboxPythonMultiContent, gFont
 		from skin import parseFont, getSkinFactor
 		from Components.MultiContent import MultiContentEntryPixmap, MultiContentEntryPixmapAlphaBlend, MultiContentEntryPixmapAlphaTest, MultiContentEntryProgress, MultiContentEntryProgressPixmap, MultiContentEntryText, MultiContentTemplateColor
+
+		# --- Compatibility shim for OpenATV-style skins using BT_* alignment flags ---
+		# OpenPLi's enigma module does not export BT_HALIGN_* / BT_VALIGN_*.
+		# Try to import them; if unavailable, alias them to the corresponding RT_* constants.
+		# For pixmap entries these flags are effectively ignored, so aliasing is safe.
+		try:
+			from enigma import BT_HALIGN_CENTER, BT_HALIGN_LEFT, BT_HALIGN_RIGHT, BT_VALIGN_BOTTOM, BT_VALIGN_CENTER, BT_VALIGN_TOP
+		except ImportError:
+			BT_HALIGN_CENTER = RT_HALIGN_CENTER
+			BT_HALIGN_LEFT = RT_HALIGN_LEFT
+			BT_HALIGN_RIGHT = RT_HALIGN_RIGHT
+			BT_VALIGN_BOTTOM = RT_VALIGN_BOTTOM
+			BT_VALIGN_CENTER = RT_VALIGN_CENTER
+			BT_VALIGN_TOP = RT_VALIGN_TOP
+		# -----------------------------------------------------------------------------
+
 		f = getSkinFactor()
 		loc = locals()
 		del loc["self"]  # Cleanup locals a bit.
@@ -20,21 +36,30 @@ class TemplatedMultiContent(StringList):
 		self.template = eval(args, {}, loc)
 		self.scale = None
 		self.orientations = {"orHorizontal": eListbox.orHorizontal, "orVertical": eListbox.orVertical}
-		assert "fonts" in self.template
-		assert "itemHeight" in self.template
-		assert "template" in self.template or "templates" in self.template
-		assert "template" in self.template or "default" in self.template["templates"]  # We need to have a default template.
-		if "template" not in self.template:  # Default template can be ["template"] or ["templates"]["default"].
-			templateDefault = self.template["templates"]["default"]
-			self.template["template"] = templateDefault[1]  # mandatory
-			self.template["itemHeight"] = templateDefault[0]  # mandatory
-			if len(templateDefault) > 2:  # optional
-				self.template["selectionEnabled"] = templateDefault[2]
-			if len(templateDefault) > 3:  # optional
-				self.template["scrollbarMode"] = templateDefault[3]
-			if len(templateDefault) > 5:  # optional, but, must be present together
-				self.template["itemWidth"] = templateDefault[4]
-				self.template["orientation"] = templateDefault[5]
+
+		# --- Lenient validation (OpenATV style) instead of hard asserts ---
+		if "fonts" not in self.template:
+			print("[TemplatedMultiContent] Error: All templates must include a 'fonts' entry!")
+		if "template" in self.template or "templates" in self.template:
+			if "template" in self.template or "default" in self.template.get("templates", {}):
+				if "template" not in self.template:  # Default template can be ["template"] or ["templates"]["default"].
+					templateDefault = self.template["templates"]["default"]
+					self.template["template"] = templateDefault[1]  # mandatory
+					self.template["itemHeight"] = templateDefault[0]  # mandatory
+					if len(templateDefault) > 2:  # optional
+						self.template["selectionEnabled"] = templateDefault[2]
+					if len(templateDefault) > 3:  # optional
+						self.template["scrollbarMode"] = templateDefault[3]
+					if len(templateDefault) > 5:  # optional, but, must be present together
+						self.template["itemWidth"] = templateDefault[4]
+						self.template["orientation"] = templateDefault[5]
+				if "itemHeight" not in self.template and "itemSize" not in self.template:
+					print("[TemplatedMultiContent] Error: All 'template' entries must include an 'itemHeight' or 'itemSize' entry!")
+			else:
+				print("[TemplatedMultiContent] Error: All 'templates' must include a 'default' template!")
+		else:
+			print("[TemplatedMultiContent] Error: All TemplatedMultiContent converters must include either a 'template' or 'templates' entry!")
+		# ------------------------------------------------------------------
 
 	def changed(self, what):
 		if not self.content:
@@ -79,7 +104,7 @@ class TemplatedMultiContent(StringList):
 				return
 			templates = self.template.get("templates")  # If skin defined "templates", that means that it defines multiple styles in a dict. template should still be a default.
 			template = self.template.get("template")
-			itemheight = self.template["itemHeight"]
+			itemheight = self.template.get("itemHeight")
 			itemwidth = self.template.get("itemWidth")
 			orientation = self.template.get("orientation")
 			selectionEnabled = self.template.get("selectionEnabled", True)

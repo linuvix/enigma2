@@ -44,6 +44,34 @@ void eWidgetDesktop::removeRootWidget(eWidget *root)
 	m_root.remove(root);
 }
 
+/* ADDED: re-sort an already-registered root widget in m_root by its
+   current m_z_position. Unlike addRootWidget(), this is safe to call
+   while the widget is already registered with this desktop (it does not
+   trip the ASSERT(!root->m_desktop) and does not clear composition
+   buffers). */
+void eWidgetDesktop::repositionRootWidget(eWidget *root)
+{
+	if (!root || !root->m_desktop)
+		return;
+
+	m_root.remove(root);
+
+	int invert_sense = 0;
+	if (m_comp_mode == cmBuffered)
+		invert_sense = 1;
+
+	ePtrList<eWidget>::iterator insert_position = m_root.begin();
+	for (;;)
+	{
+		if ((insert_position == m_root.end()) || (invert_sense ^ (insert_position->m_z_position < root->m_z_position)))
+		{
+			m_root.insert(insert_position, root);
+			break;
+		}
+		++insert_position;
+	}
+}
+
 int eWidgetDesktop::movedWidget(eWidget *root)
 {
 	if (m_comp_mode != cmBuffered)
@@ -125,7 +153,25 @@ void eWidgetDesktop::recalcClipRegions(eWidget *root)
 		}
 
 		gRegion redraw = (background_before - m_screen.m_background_region) | (m_screen.m_background_region - background_before);
-		invalidate(redraw);
+
+		/* A top-level widget appeared or disappeared (menu open/close, screen
+		 * show/hide, infobar popup toggle): the set of opaque visible roots
+		 * changed, so the render target still holds the previous frame's
+		 * content everywhere outside this frame's own dirty rects - on the
+		 * DM920's immediate-composition path that is exactly the ~0.5s
+		 * "black then video" after a menu closes, because only the menu's
+		 * own rectangle gets repainted this frame and the rest waits for
+		 * later unrelated invalidates to catch up. Force one full-screen
+		 * repaint in that frame instead, so the whole transition happens
+		 * atomically. Ordinary intra-widget redraws (list scrolling, infobar
+		 * text/bar updates on zap, spinners) never change the background
+		 * region, so they keep the original dirty-rect-only path and are
+		 * unaffected by this - which is also why it cannot reintroduce the
+		 * infobar-on-zap flicker that single-buffering caused in gEGLDC. */
+		if (!redraw.empty())
+			invalidate(gRegion(eRect(ePoint(0, 0), m_screen.m_screen_size)));
+		else
+			invalidate(redraw);
 	} else if (m_comp_mode == cmBuffered)
 	{
 		if (!(root->m_vis & eWidget::wVisShow))
