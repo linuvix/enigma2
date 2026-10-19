@@ -22,6 +22,7 @@ public:
 
 	void setBackgroundColor(const gRGB &col);
 	void setCornerRadius(int radius, int edges);
+	void setWidgetAlphaBlend(bool blend) override;
 
 	void setFlag(int flags);
 	void clearFlag(int flags);
