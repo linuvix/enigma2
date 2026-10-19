@@ -1,583 +1,132 @@
+#include <lib/gui/ewindow.h>
 #include <lib/gui/ewidgetdesktop.h>
-#include <lib/gui/ewidget.h>
-#include <lib/base/ebase.h>
-#include <lib/gdi/grc.h>
 
-extern void dumpRegion(const gRegion &region);
+#include <lib/gui/ewindowstyle.h>
+#include <lib/gui/ewindowstyleskinned.h>
 
-void eWidgetDesktop::addRootWidget(eWidget *root)
+#include <lib/gdi/epng.h>
+
+eWindow::eWindow(eWidgetDesktop *desktop, int z): eWidget(0)
 {
-	ASSERT(!root->m_desktop);
+	m_flags = 0;
+	m_desktop = desktop;
+		/* ask style manager for current style */
+	ePtr<eWindowStyleManager> mgr;
+	eWindowStyleManager::getInstance(mgr);
 
-	int invert_sense = 0;
-		/* buffered mode paints back-to-front, while immediate mode is front-to-back. */
-	if (m_comp_mode == cmBuffered)
-		invert_sense = 1;
+	ePtr<eWindowStyle> style;
+	if (mgr)
+		mgr->getStyle(desktop->getStyleID(), style);
 
-	ePtrList<eWidget>::iterator insert_position = m_root.begin();
+		/* when there is either no style manager or no style, revert to simple style. */
+	if (!style)
+		style = new eWindowStyleSimple();
 
-	for (;;)
-	{
-		if ((insert_position == m_root.end()) || (invert_sense ^ (insert_position->m_z_position < root->m_z_position)))
-		{
-			m_root.insert(insert_position, root);
-			break;
-		}
-		++insert_position;
-	}
+	setStyle(style);
 
-	root->m_desktop = this;
+	setZPosition(z); /* must be done before addRootWidget */
 
-		/* the creation will be postponed. */
-	for (int i = 0; i < MAX_LAYER; ++i)
-		root->m_comp_buffer[i] = 0;
+		/* we are the parent for the child window. */
+		/* as we are in the constructor, this is thread safe. */
+	m_child = this;
+	m_child = new eWidget(this);
+	desktop->addRootWidget(this);
 }
 
-void eWidgetDesktop::removeRootWidget(eWidget *root)
+eWindow::~eWindow()
 {
-	if (m_comp_mode == cmBuffered)
-	{
-		for (int i = 0; i < MAX_LAYER; ++i)
-			removeBufferForWidget(root, i);
-	}
-
-	m_root.remove(root);
+	m_desktop->removeRootWidget(this);
+	m_child->destruct();
 }
 
-/* ADDED: re-sort an already-registered root widget in m_root by its
-   current m_z_position. Unlike addRootWidget(), this is safe to call
-   while the widget is already registered with this desktop (it does not
-   trip the ASSERT(!root->m_desktop) and does not clear composition
-   buffers). */
-void eWidgetDesktop::repositionRootWidget(eWidget *root)
+void eWindow::setTitle(const std::string &string)
 {
-	if (!root || !root->m_desktop)
+	if (m_title == string)
 		return;
-
-	m_root.remove(root);
-
-	int invert_sense = 0;
-	if (m_comp_mode == cmBuffered)
-		invert_sense = 1;
-
-	ePtrList<eWidget>::iterator insert_position = m_root.begin();
-	for (;;)
-	{
-		if ((insert_position == m_root.end()) || (invert_sense ^ (insert_position->m_z_position < root->m_z_position)))
-		{
-			m_root.insert(insert_position, root);
-			break;
-		}
-		++insert_position;
-	}
+	m_title = string;
+	event(evtTitleChanged);
 }
 
-int eWidgetDesktop::movedWidget(eWidget *root)
+std::string eWindow::getTitle() const
 {
-	if (m_comp_mode != cmBuffered)
-		return -1; /* native move not supported */
-
-	for (int i = 0; i < MAX_LAYER; ++i)
-	{
-		if (root->m_comp_buffer[i])
-			root->m_comp_buffer[i]->m_position = root->position();
-//		redrawComposition(0);
-	}
-
-	return 0; /* native move ok */
+	return m_title;
 }
 
-void eWidgetDesktop::calcWidgetClipRegion(eWidget *widget, gRegion &parent_visible, bool parent)
+void eWindow::setBackgroundColor(const gRGB &col)
 {
-		/* start with our clip region, clipped with the parent's */
-	if (widget->m_vis & eWidget::wVisShow)
-	{
-		widget->m_visible_region = widget->m_clip_region;
-		widget->m_visible_region.moveBy(widget->position());
-		widget->m_visible_region &= parent_visible; // in parent space!
-
-		if (!widget->isTransparent() && (widget->m_cornerRadius == 0 || parent))
-				/* remove everything this widget will contain from parent's visible list, unless widget is transparent. */
-			parent_visible -= widget->m_visible_region; // will remove child regions too!
-
-			/* now prepare for recursing to childs */
-		widget->m_visible_region.moveBy(-widget->position());            // now in local space
-	} else
-		widget->m_visible_region = gRegion();
-
-	widget->m_visible_with_childs = widget->m_visible_region;
-
-			/* add childs in reverse (Z) order - we're going from front-to-bottom here. */
-	ePtrList<eWidget>::iterator i(widget->m_childs.end());
-
-	for (;;)
-	{
-		if (i != widget->m_childs.end())
-		{
-			if (i->m_vis & eWidget::wVisShow)
-				calcWidgetClipRegion(*i, widget->m_visible_region, false);
-			else
-				clearVisibility(*i);
-		}
-		if (i == widget->m_childs.begin())
-			break;
-		--i;
-	}
+		/* set background color for child, too */
+	eWidget::setBackgroundColor(col);
+	m_child->setBackgroundColor(col);
 }
 
-void eWidgetDesktop::recalcClipRegions(eWidget *root)
+void eWindow::setFlag(int flags)
 {
-	if (m_comp_mode == cmImmediate)
+	m_flags |= flags;
+}
+
+void eWindow::clearFlag(int flags)
+{
+	m_flags &= ~flags;
+}
+
+int eWindow::event(int event, void *data, void *data2)
+{
+	switch (event)
 	{
-		gRegion background_before = m_screen.m_background_region;
-
-		m_screen.m_background_region = gRegion(eRect(ePoint(0, 0), m_screen.m_screen_size));
-
-		for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); ++i)
+	case evtWillChangeSize:
+	{
+		eSize &new_size = *static_cast<eSize*>(data);
+		eSize &offset = *static_cast<eSize*>(data2);
+		if (!(m_flags & wfNoBorder))
 		{
-			if (!(i->m_vis & eWidget::wVisShow))
+			ePtr<eWindowStyle> style;
+			if (!getStyle(style))
 			{
-				clearVisibility(i);
-				continue;
+//			eDebug("[eWindow] evtWillChangeSize to %d %d", new_size.width(), new_size.height());
+				style->handleNewSize(this, new_size, offset);
 			}
-
-			gRegion visible_before = i->m_visible_with_childs;
-
-			calcWidgetClipRegion(*i, m_screen.m_background_region);
-
-			gRegion redraw = (i->m_visible_with_childs - visible_before) | (visible_before - i->m_visible_with_childs);
-
-			redraw.moveBy(i->position());
-
-			invalidate(redraw);
-		}
-
-		gRegion redraw = (background_before - m_screen.m_background_region) | (m_screen.m_background_region - background_before);
-
-		/* A top-level widget appeared or disappeared (menu open/close, screen
-		 * show/hide, infobar popup toggle): the set of opaque visible roots
-		 * changed, so the render target still holds the previous frame's
-		 * content everywhere outside this frame's own dirty rects - on the
-		 * DM920's immediate-composition path that is exactly the ~0.5s
-		 * "black then video" after a menu closes, because only the menu's
-		 * own rectangle gets repainted this frame and the rest waits for
-		 * later unrelated invalidates to catch up. Force one full-screen
-		 * repaint in that frame instead, so the whole transition happens
-		 * atomically. Ordinary intra-widget redraws (list scrolling, infobar
-		 * text/bar updates on zap, spinners) never change the background
-		 * region, so they keep the original dirty-rect-only path and are
-		 * unaffected by this - which is also why it cannot reintroduce the
-		 * infobar-on-zap flicker that single-buffering caused in gEGLDC. */
-		if (!redraw.empty())
-			invalidate(gRegion(eRect(ePoint(0, 0), m_screen.m_screen_size)));
-		else
-			invalidate(redraw);
-	} else if (m_comp_mode == cmBuffered)
+		} else
+			m_child->resize(new_size);
+		break;
+	}
+	case evtPaint:
 	{
-		if (!(root->m_vis & eWidget::wVisShow))
+		if (!(m_flags & wfNoBorder))
 		{
-			clearVisibility(root);
-			for (int i = 0; i < MAX_LAYER; ++i)
-				removeBufferForWidget(root, i);
-			return;
-		}
-
-		for (int i = 0; i < MAX_LAYER; ++i)
-		{
-			eWidgetDesktopCompBuffer *comp = root->m_comp_buffer[i];
-
-					/* TODO: layers might not be required to have the screen size, for memory reasons. */
-			if ((i == 0 && !comp) || (comp && (root->size() != comp->m_screen_size)))
-				createBufferForWidget(root, 0);
-
-			comp = root->m_comp_buffer[i]; /* it might have changed. */
-
-			if (!comp)
-				continue;  /* WAIT, don't we need to invalidate,whatever */
-
-					/* CHECKME: don't we need to recalculate everything? after all, our buffer has changed and is likely to be cleared */
-		 	gRegion visible_before = root->m_visible_with_childs;
-
-			comp->m_background_region = gRegion(eRect(comp->m_position, comp->m_screen_size));
-
-			gRegion visible_new = root->m_visible_with_childs - visible_before;
-			gRegion visible_lost = visible_before - root->m_visible_with_childs;
-			visible_new.moveBy(root->position());
-			visible_lost.moveBy(root->position());
-
-			invalidate(visible_new, root, i);
-			invalidate(visible_lost, root, i);
-
-			calcWidgetClipRegion(root, comp->m_background_region);
-		}
-	}
-}
-
-void eWidgetDesktop::invalidateWidgetLayer(const gRegion &region, const eWidget *widget, int layer)
-{
-	if (m_comp_mode == cmImmediate)
-	{
-		invalidate(region);
-		return;
-	}
-	eWidgetDesktopCompBuffer *comp = widget->m_comp_buffer[layer];
-	if (comp)
-		comp->m_dirty_region |= region;
-}
-
-void eWidgetDesktop::invalidateWidget(const gRegion &region, const eWidget *widget, int layer)
-{
-	if (m_comp_mode == cmImmediate)
-	{
-		invalidate(region);
-		return;
-	}
-
-	if (!(widget->m_vis & eWidget::wVisShow))
-		return;
-
-	gRegion mregion = region;
-	if (layer == -1)
-		for (int layer = 0; layer < MAX_LAYER; ++layer)
-			invalidateWidgetLayer(mregion, widget, layer);
-	else
-		invalidateWidgetLayer(mregion, widget, layer);
-}
-
-void eWidgetDesktop::invalidate(const gRegion &region, const eWidget *widget, int layer)
-{
-	if (region.empty())
-		return;
-
-	if (m_timer && !m_require_redraw)
-		m_timer->start(0, 1); // start singleshot redraw timer
-
-	m_require_redraw = 1;
-
-	if (m_comp_mode == cmImmediate)
-	{
-			/* in immediate mode, we don't care for widget and layer, we use the topmost. */
-		m_screen.m_dirty_region |= region;
-	} else
-	{
-		if (!widget)
-			for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); ++i)
-				invalidateWidget(region, i);
-		else
-			invalidateWidget(region, widget, layer);
-	}
-}
-
-void eWidgetDesktop::setBackgroundColor(eWidgetDesktopCompBuffer *comp, gRGB col)
-{
-	comp->m_background_color = col;
-
-		/* if there's something visible from the background, redraw it with the new color. */
-	if (comp->m_dc && comp->m_background_region.valid() && !comp->m_background_region.empty())
-	{
-			/* todo: split out "setBackgroundColor / clear"... maybe? */
-		gPainter painter(comp->m_dc);
-		painter.resetClip(comp->m_background_region);
-		painter.setBackgroundColor(comp->m_background_color);
-		painter.clear();
-	}
-}
-
-void eWidgetDesktop::setBackgroundColor(gRGB col)
-{
-	setBackgroundColor(&m_screen, col);
-
-	if (m_comp_mode == cmBuffered)
-		for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); ++i)
-		{
-			for (int l = 0; l < MAX_LAYER; ++l)
-				if (i->m_comp_buffer[l])
-					setBackgroundColor(i->m_comp_buffer[l], l ? gRGB(0, 0, 0, 0) : col); /* all layers above 0 will have a transparent background */
-		}
-}
-
-void eWidgetDesktop::setPalette(gPixmap &pm)
-{
-//	if (m_comp_mode == cmImmediate)
-	{
-		ASSERT(m_screen.m_dc);
-		gPainter painter(m_screen.m_dc);
-		painter.setPalette(&pm);
-	}
-
-	if (m_comp_mode == cmBuffered)
-	{
-		for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); ++i)
-		{
-			for (int l = 0; l < MAX_LAYER; ++l)
+			ePtr<eWindowStyle> style;
+			if (!getStyle(style))
 			{
-				if (!i->m_comp_buffer[l])
-					continue;
-				ASSERT(i->m_comp_buffer[l]->m_dc);
-				gPainter painter(i->m_comp_buffer[l]->m_dc);
-				painter.setPalette(&pm);
+				gPainter &painter = *static_cast<gPainter*>(data2);
+				style->paintWindowDecoration(this, painter, m_title);
 			}
 		}
+		return 0;
 	}
-}
-
-void eWidgetDesktop::paintBackground(eWidgetDesktopCompBuffer *comp)
-{
-	if (!comp)
-		return;
-
-	comp->m_dirty_region &= comp->m_background_region;
-
-	gPainter painter(comp->m_dc);
-
-	painter.resetClip(comp->m_dirty_region);
-	painter.setBackgroundColor(comp->m_background_color);
-	painter.clear();
-
-	comp->m_dirty_region = gRegion();
-}
-
-
-void eWidgetDesktop::paintLayer(eWidget *widget, int layer)
-{
-	eWidgetDesktopCompBuffer *comp = (m_comp_mode == cmImmediate) ? &m_screen : widget->m_comp_buffer[layer];
-	if (m_comp_mode == cmImmediate)
-		ASSERT(layer == 0);
-	if (!comp)
-		return;
-	gPainter painter(comp->m_dc);
-	painter.moveOffset(-comp->m_position);
-	widget->doPaint(painter, comp->m_dirty_region, layer);
-	painter.resetOffset();
-}
-
-void eWidgetDesktop::paint()
-{
-	m_require_redraw = 0;
-
-		/* walk all root windows. */
-	for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); ++i)
-	{
-
-		if (!(i->m_vis & eWidget::wVisShow))
-			continue;
-
-		if (m_comp_mode == cmImmediate)
-			paintLayer(i, 0);
-		else
-			for (int l = 0; l < MAX_LAYER; ++l)
-			{
-				paintLayer(i, l);
-				paintBackground(i->m_comp_buffer[l]);
-			}
+	case evtTitleChanged:
+			/* m_visible_region contains, in contrast to m_visible_with_childs,
+			   only the decoration. though repainting the whole decoration is bad,
+			   repainting the whole window is even worse. */
+		invalidate(m_visible_region);
+		break;
+	default:
+		break;
 	}
-
-	if (m_comp_mode == cmImmediate)
-		paintBackground(&m_screen);
-
-	if (m_comp_mode == cmBuffered)
-	{
-//		redrawComposition(0);
-	} else
-	{
-		gPainter painter(m_screen.m_dc);
-		painter.flush();
-	}
+	return eWidget::event(event, data, data2);
 }
 
-void eWidgetDesktop::setDC(gDC *dc)
+void eWindow::setCornerRadius(int radius, int edges)
 {
-	m_screen.m_dc = dc;
-	if (m_comp_mode == cmBuffered)
-		redrawComposition(1);
+	/* set corner radius for child, too */
+	eWidget::setCornerRadius(radius, edges);
+	m_child->setCornerRadius(radius, edges);
 }
 
-void eWidgetDesktop::setRedrawTask(eMainloop &ml)
+void eWindow::setWidgetAlphaBlend(bool blend)
 {
-	if (m_mainloop)
-	{
-		m_timer = 0;
-		m_mainloop = 0;
-	}
-	m_mainloop = &ml;
-	m_timer = eTimer::create(m_mainloop);
-	CONNECT(m_timer->timeout, eWidgetDesktop::paint);
-
-	if (m_require_redraw)
-		m_timer->start(0, 1);
-}
-
-void eWidgetDesktop::makeCompatiblePixmap(ePtr<gPixmap> &pm)
-{
-	makeCompatiblePixmap(*(pm.operator->()));
-}
-
-void eWidgetDesktop::makeCompatiblePixmap(gPixmap &pm)
-{
-	if (m_comp_mode != cmImmediate)
-		return;
-
-//	eDebug("[widgetDesktop] make compatible pixmap of %p", &pm);
-	if (!m_screen.m_dc)
-	{
-		eWarning("[eWidgetDesktop] no DC to make pixmap compatible with!");
-		return;
-	}
-
-	ePtr<gPixmap> target_pixmap;
-	m_screen.m_dc->getPixmap(target_pixmap);
-
-	if (!target_pixmap) {
-		eDebug("[eWidgetDesktop] no target pixmap! assuming bpp > 8 for accelerated graphics.");
-		return;
-	}
-
-	if (target_pixmap->surface && target_pixmap->surface->bpp > 8)
-		return;
-
-	ePtr<gDC> pixmap_dc = new gDC(&pm);
-	gPainter pixmap_painter(pixmap_dc);
-
-	pixmap_painter.mergePalette(target_pixmap);
-}
-
-void eWidgetDesktop::setCompositionMode(int mode)
-{
-	m_comp_mode = mode;
-
-	if (mode == cmBuffered)
-		for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); ++i)
-			createBufferForWidget(*i, 0);
-	else
-		for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); ++i)
-			for (int l = 0; l < MAX_LAYER; ++l)
-				removeBufferForWidget(*i, l);
-}
-
-eWidgetDesktop::eWidgetDesktop(eSize size):
-	m_mainloop(0),
-	m_require_redraw(0),
-	m_style_id(0),
-	m_margins(0,0,0,0)
-{
-	m_screen.m_dirty_region = gRegion(eRect(ePoint(0, 0), size));
-	m_screen.m_screen_size = size;
-
-	CONNECT(gRC::getInstance()->notify, eWidgetDesktop::notify);
-	setCompositionMode(cmImmediate);
-}
-
-eWidgetDesktop::~eWidgetDesktop()
-{
-		/* tell registered root windows that they no longer have a desktop. */
-	for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); )
-	{
-		i->m_desktop = 0;
-		i = m_root.erase(i);
-	}
-		/* destroy all buffers */
-	setCompositionMode(-1);
-}
-
-void eWidgetDesktop::createBufferForWidget(eWidget *widget, int layer)
-{
-	removeBufferForWidget(widget, layer);
-
-	eWidgetDesktopCompBuffer *comp = widget->m_comp_buffer[layer] = new eWidgetDesktopCompBuffer;
-
-	eDebug("[eWidgetDesktop] create buffer for widget layer %d, %d x %d\n", layer, widget->size().width(), widget->size().height());
-
-	eRect bbox = eRect(widget->position(), widget->size());
-	comp->m_position = bbox.topLeft();
-	comp->m_dirty_region = gRegion(eRect(ePoint(0, 0), bbox.size()));
-	comp->m_screen_size = bbox.size();
-		/* TODO: configurable bit depth. */
-
-		/* clone palette. FIXME. */
-	ePtr<gPixmap> pm = new gPixmap(comp->m_screen_size, 32, 1), pm_screen;
-	pm->surface->clut.data = new gRGB[256];
-	pm->surface->clut.colors = 256;
-	pm->surface->clut.start = 0;
-
-	m_screen.m_dc->getPixmap(pm_screen);
-
-	memcpy(static_cast<void*>(pm->surface->clut.data), pm_screen->surface->clut.data, 256 * sizeof(gRGB));
-
-	comp->m_dc = new gDC(pm);
-}
-
-void eWidgetDesktop::removeBufferForWidget(eWidget *widget, int layer)
-{
-	if (widget->m_comp_buffer[layer])
-	{
-		delete widget->m_comp_buffer[layer];
-		widget->m_comp_buffer[layer] = 0;
-	}
-}
-
-void eWidgetDesktop::redrawComposition(int notified)
-{
-	if (m_comp_mode != cmBuffered)
-		return;
-
-	ASSERT(m_screen.m_dc);
-
-	gPainter p(m_screen.m_dc);
-	p.resetClip(eRect(ePoint(0, 0), m_screen.m_screen_size));
-	p.setBackgroundColor(m_screen.m_background_color);
-	p.clear();
-
-	for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); ++i)
-	{
-		if (!i->isVisible())
-			continue;
-		for (int layer = 0; layer < MAX_LAYER; ++layer)
-		{
-			ePtr<gPixmap> pm;
-			if (!i->m_comp_buffer[layer])
-				continue;
-			i->m_comp_buffer[layer]->m_dc->getPixmap(pm);
-			p.blit(pm, i->m_comp_buffer[layer]->m_position, eRect(), gPixmap::blitAlphaBlend);
-		}
-	}
-
-		// flip activates on next vsync.
-	p.flip();
-	p.waitVSync();
-
-	if (notified)
-		p.notify();
-
-	for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); ++i)
-		if (i->m_animation.m_active)
-			i->m_animation.tick(1);
-}
-
-void eWidgetDesktop::notify()
-{
-	redrawComposition(1);
-}
-
-void eWidgetDesktop::clearVisibility(eWidget *widget)
-{
-	widget->m_visible_with_childs = gRegion();
-	for (ePtrList<eWidget>::iterator i(widget->m_childs.begin()); i != widget->m_childs.end(); ++i)
-		clearVisibility(*i);
-}
-
-void eWidgetDesktop::resize(eSize size)
-{
-	m_screen.m_dirty_region = gRegion(eRect(ePoint(0, 0), size));
-	m_screen.m_screen_size = size;
-}
-
-eRect eWidgetDesktop::bounds() const
-{
-	const eSize size = m_screen.m_screen_size;
-	return eRect(
-			m_margins.left(),
-			m_margins.top(),
-			size.width() - m_margins.left() - m_margins.right(), // width
-			size.height() - m_margins.top() - m_margins.bottom() // height
-		);
+	/* set alphablend for child, too -- the window itself only ever paints its
+	   border/title decoration (see event(evtPaint)), the actual background is
+	   painted by m_child, so it needs to alphablend as well for a screen-level
+	   alphaBlend skin attribute to have any visible effect. */
+	eWidget::setWidgetAlphaBlend(blend);
+	m_child->setWidgetAlphaBlend(blend);
 }
