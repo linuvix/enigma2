@@ -4,7 +4,6 @@ from Components.config import config
 from Components.NimManager import nimmanager
 from skin import parameters
 
-
 class FrontendInfo(Converter):
 	BER = 0
 	SNR = 1
@@ -42,19 +41,17 @@ class FrontendInfo(Converter):
 			self.type = self.LOCK
 
 	def getAGC(self):
-		# 1. First, try to get the real AGC from the driver.
+		# 1. Try to get the real AGC from the driver.
 		agc = self.source.agc
 		
 		# If the driver provides a valid AGC value, use it!
-		# Note: Some drivers return 0 when there is no signal, which might be valid.
-		# We only fallback if the value is strictly None or 0 (and SNR exists).
 		if agc is not None and agc > 0:
 			return agc
 			
 		# 2. If AGC is missing (None or 0), fallback to SNR calculation for DreamBox compatibility
 		snr = self.source.snr
 		if snr is None:
-			return agc # Returns None or 0
+			return agc
 			
 		snr_percent = (snr * 100.0) / 65535.0
 		if snr_percent < 35:
