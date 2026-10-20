@@ -64,6 +64,7 @@ while : ; do
 	#  5 - install new settings
 	#  6 - restart enigma in debug mode
 	#  7 - manufacturer reset
+	# 16 - recovery mode
 	# 42 - restart for unattended update
 	# 43 - restart for network restore
 	# 44 - restart for autobackup restore
@@ -99,6 +100,23 @@ while : ; do
 			;;
 		7)
 			rm -R /etc/enigma2
+			;;
+		16)
+			stbcheck=`cat /proc/stb/info/model`
+			if [[ $stbcheck == "one" || $stbcheck == "two" ]]; then
+				/usr/sbin/to-the-rescue
+			fi
+			if [ -e /dev/block/by-name/flag ]; then
+				echo -n "0" > /dev/block/by-name/flag
+			elif [ -e /dev/block/by-name/bootoptions ]; then
+				mkdir -p /tmp/bootoptions
+				mount /dev/block/by-name/bootoptions /tmp/bootoptions
+				cp -f /tmp/bootoptions/STARTUP_RECOVERY /tmp/bootoptions/STARTUP_ONCE
+			else
+				echo "rescue" > /proc/stb/fp/boot_mode
+			fi
+			[[ -e /etc/enigma2/.deep ]] && rm /etc/enigma2/.deep
+			/sbin/reboot
 			;;
 		42)
 			# bind the console (when available)
