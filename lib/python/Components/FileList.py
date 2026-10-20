@@ -122,6 +122,12 @@ class FileList(MenuList):
 		self.l.setItemHeight(font[2])
 		self.serviceHandler = eServiceCenter.getInstance()
 
+	def getCurrentIndex(self):
+		"""Compatibility method for OpenATV plugins: return the current selection index."""
+		if self.l.getCurrentSelection() is None:
+			return -1
+		return self.l.getCurrentSelectionIndex()
+
 	def refreshMountpoints(self):
 		self.mountpoints = [os.path.join(p.mountpoint, "") for p in harddiskmanager.getMountedPartitions()]
 		self.mountpoints.sort(reverse=True)
@@ -347,6 +353,12 @@ class MultiFileSelectList(FileList):
 		self.l.setFont(0, gFont(font[0], font[1]))
 		self.l.setItemHeight(font[2])
 		self.onSelectionChanged = []
+
+	def getCurrentIndex(self):
+		"""Compatibility method for OpenATV plugins: return the current selection index."""
+		if self.l.getCurrentSelection() is None:
+			return -1
+		return self.l.getCurrentSelectionIndex()
 
 	def selectionChanged(self):
 		for f in self.onSelectionChanged:
