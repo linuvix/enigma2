@@ -180,3 +180,12 @@ class HelpableNumberActionMap(NumberActionMap, HelpableActionMap):
 		# these once, via the HelpableActionMap.
 		NumberActionMap.__init__(self, [], {})
 		HelpableActionMap.__init__(self, parent, contexts, actions, prio, description)
+
+# --- OpenATV compatibility layer ---
+# OpenPLi uses keymapparser instead, so provide a fallback import.
+try:
+    from keymapparser import readKeymap as loadKeymap
+except ImportError:
+    def loadKeymap(*args, **kwargs):
+        print("[ActionMap] loadKeymap fallback called, but keymapparser is not available")
+# --- end compatibility layer ---

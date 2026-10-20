@@ -7,6 +7,14 @@ from enigma import RT_HALIGN_LEFT, eListboxPythonMultiContent, eServiceReference
 from Tools.LoadPixmap import LoadPixmap
 from skin import applySkinFactor, fonts, parameters
 
+# --- OpenATV compatibility layer ---
+FILE_PATH = 0
+FILE_IS_DIR = 1
+FILE_IS_LINK = 2
+FILE_SELECTED = 3
+FILE_NAME = 4
+FILE_DIR_ICON = 5
+# --- end compatibility layer ---
 
 EXTENSIONS = {
 		"dts": "music",
