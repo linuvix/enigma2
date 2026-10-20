@@ -10,22 +10,15 @@ void eWidgetDesktop::addRootWidget(eWidget *root)
 	ASSERT(!root->m_desktop);
 
 	int invert_sense = 0;
-		/* m_root is always kept sorted front-to-back in immediate mode (used for
-		   clip region calculation, front to back), and back-to-front in buffered
-		   mode (used for composition, back to front). immediate mode painting
-		   itself walks m_root in reverse (back-to-front) -- see paint(). */
+		/* buffered mode paints back-to-front, while immediate mode is front-to-back. */
 	if (m_comp_mode == cmBuffered)
 		invert_sense = 1;
 
 	ePtrList<eWidget>::iterator insert_position = m_root.begin();
 
-		/* <= rather than < : among widgets sharing the same (e.g. default,
-		   unset) zPosition, the one added last ends up on top, consistent
-		   with how child widgets are stacked (see eWidget::insertIntoParent)
-		   and with the painting order below. */
 	for (;;)
 	{
-		if ((insert_position == m_root.end()) || (invert_sense ^ (insert_position->m_z_position <= root->m_z_position)))
+		if ((insert_position == m_root.end()) || (invert_sense ^ (insert_position->m_z_position < root->m_z_position)))
 		{
 			m_root.insert(insert_position, root);
 			break;
@@ -70,10 +63,7 @@ void eWidgetDesktop::repositionRootWidget(eWidget *root)
 	ePtrList<eWidget>::iterator insert_position = m_root.begin();
 	for (;;)
 	{
-			/* keep the same <= semantics as addRootWidget(): a re-raised widget
-			   with the same zPosition goes on top, matching raise()/lower()
-			   expectations. */
-		if ((insert_position == m_root.end()) || (invert_sense ^ (insert_position->m_z_position <= root->m_z_position)))
+		if ((insert_position == m_root.end()) || (invert_sense ^ (insert_position->m_z_position < root->m_z_position)))
 		{
 			m_root.insert(insert_position, root);
 			break;
@@ -97,7 +87,7 @@ int eWidgetDesktop::movedWidget(eWidget *root)
 	return 0; /* native move ok */
 }
 
-void eWidgetDesktop::calcWidgetClipRegion(eWidget *widget, gRegion &parent_visible)
+void eWidgetDesktop::calcWidgetClipRegion(eWidget *widget, gRegion &parent_visible, bool parent)
 {
 		/* start with our clip region, clipped with the parent's */
 	if (widget->m_vis & eWidget::wVisShow)
@@ -106,13 +96,8 @@ void eWidgetDesktop::calcWidgetClipRegion(eWidget *widget, gRegion &parent_visib
 		widget->m_visible_region.moveBy(widget->position());
 		widget->m_visible_region &= parent_visible; // in parent space!
 
-		if (!widget->isTransparent() && !widget->m_gradient_alphablend && widget->m_cornerRadius == 0 && !widget->m_alphaBlend)
-				/* remove everything this widget will contain from parent's visible list, unless the
-				   widget is transparent, alphablended, gradient-alphablended or rounded -- in that
-				   case whatever is behind it (a parent widget, another root widget, or the desktop
-				   background) must stay available so it keeps being calculated/painted underneath.
-				   this applies the same way at root (screen) level as it does for nested widgets,
-				   so overlapping root windows respect zPosition and composite correctly. */
+		if (!widget->isTransparent() && (widget->m_cornerRadius == 0 || parent))
+				/* remove everything this widget will contain from parent's visible list, unless widget is transparent. */
 			parent_visible -= widget->m_visible_region; // will remove child regions too!
 
 			/* now prepare for recursing to childs */
@@ -130,7 +115,7 @@ void eWidgetDesktop::calcWidgetClipRegion(eWidget *widget, gRegion &parent_visib
 		if (i != widget->m_childs.end())
 		{
 			if (i->m_vis & eWidget::wVisShow)
-				calcWidgetClipRegion(*i, widget->m_visible_region);
+				calcWidgetClipRegion(*i, widget->m_visible_region, false);
 			else
 				clearVisibility(*i);
 		}
@@ -336,21 +321,20 @@ void eWidgetDesktop::setPalette(gPixmap &pm)
 	}
 }
 
-void eWidgetDesktop::paintBackground(eWidgetDesktopCompBuffer *comp, bool clearDirty)
+void eWidgetDesktop::paintBackground(eWidgetDesktopCompBuffer *comp)
 {
 	if (!comp)
 		return;
 
-	gRegion background_dirty = comp->m_dirty_region & comp->m_background_region;
+	comp->m_dirty_region &= comp->m_background_region;
 
 	gPainter painter(comp->m_dc);
 
-	painter.resetClip(background_dirty);
+	painter.resetClip(comp->m_dirty_region);
 	painter.setBackgroundColor(comp->m_background_color);
 	painter.clear();
 
-	if (clearDirty)
-		comp->m_dirty_region = gRegion();
+	comp->m_dirty_region = gRegion();
 }
 
 
@@ -363,13 +347,6 @@ void eWidgetDesktop::paintLayer(eWidget *widget, int layer)
 		return;
 	gPainter painter(comp->m_dc);
 	painter.moveOffset(-comp->m_position);
-		/* no pre-clear here: alphablended/gradient/rounded-corner drawing (see
-		   gPixmap::drawRectangle/drawRectangleNew) blends against whatever is
-		   already in the destination, and rounded corners outside the radius
-		   are deliberately left untouched. Both rely on the real content behind
-		   this widget -- the desktop background or another root widget -- having
-		   already been painted there (see paint()); clearing to a fixed color
-		   first would blend/leave that fixed color instead of what's behind. */
 	widget->doPaint(painter, comp->m_dirty_region, layer);
 	painter.resetOffset();
 }
@@ -378,47 +355,25 @@ void eWidgetDesktop::paint()
 {
 	m_require_redraw = 0;
 
-	if (m_comp_mode == cmImmediate)
+		/* walk all root windows. */
+	for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); ++i)
 	{
-			/* paint the true (video) background first: widgets with a transparent,
-			   alphablended, gradient-alphablended or rounded-corner background rely
-			   on whatever is behind them -- the desktop background, or another root
-			   widget -- already being painted, so they can composite on top of it. */
-		paintBackground(&m_screen, false);
 
-			/* m_root is sorted front-to-back (see addRootWidget). paint it back-to-
-			   front, so widgets further back are painted first and the ones in front
-			   of them (which may be transparent/blended) composite correctly on top,
-			   respecting zPosition. Manual reverse iteration is used instead of
-			   rbegin()/rend() to avoid depending on ePtrList reverse_iterator
-			   support. */
-		for (ePtrList<eWidget>::iterator i(m_root.end()); i != m_root.begin(); )
-		{
-			--i;
+		if (!(i->m_vis & eWidget::wVisShow))
+			continue;
 
-			if (!(i->m_vis & eWidget::wVisShow))
-				continue;
-
+		if (m_comp_mode == cmImmediate)
 			paintLayer(i, 0);
-		}
-
-		m_screen.m_dirty_region = gRegion();
-	}
-	else
-	{
-			/* walk all root windows. */
-		for (ePtrList<eWidget>::iterator i(m_root.begin()); i != m_root.end(); ++i)
-		{
-			if (!(i->m_vis & eWidget::wVisShow))
-				continue;
-
+		else
 			for (int l = 0; l < MAX_LAYER; ++l)
 			{
 				paintLayer(i, l);
 				paintBackground(i->m_comp_buffer[l]);
 			}
-		}
 	}
+
+	if (m_comp_mode == cmImmediate)
+		paintBackground(&m_screen);
 
 	if (m_comp_mode == cmBuffered)
 	{
