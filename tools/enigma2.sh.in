@@ -64,6 +64,7 @@ while : ; do
 	#  5 - install new settings
 	#  6 - restart enigma in debug mode
 	#  7 - manufacturer reset
+	# 15 - clear cache
 	# 16 - recovery mode
 	# 42 - restart for unattended update
 	# 43 - restart for network restore
@@ -100,6 +101,22 @@ while : ; do
 			;;
 		7)
 			rm -R /etc/enigma2
+			;;
+		15)
+			rm -fR /home/root/.cache/gstreamer-1.0
+			rm -f /tmp/.listen.camd.socket.ignore
+				dd if=/dev/zero of=/dev/fb0 bs=1M count=16 2>/dev/null
+			env -i \
+			HOME=/home/root \
+			USER=root \
+			PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+			MESA_EXTENSION_OVERRIDE='-GL_EXT_discard_framebuffer' \
+			sync
+			ulimit -n 16384 2>/dev/null || ulimit -n 8192
+			echo 3 > /proc/sys/vm/drop_caches
+			/usr/bin/kodi --standalone  >/tmp/kodi-standalone.log 2>&1
+			ret=$?
+			echo "kodi exit code: $ret" >>/tmp/kodi-standalone.log
 			;;
 		16)
 			stbcheck=`cat /proc/stb/info/model`
