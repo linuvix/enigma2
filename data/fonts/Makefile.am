@@ -15,7 +15,7 @@ dist_install_DATA = \
 	LiberationSans-Regular.ttf \
 	md_khmurabi_10.ttf \
 	nmsbd.ttf \
-	NotoNaskhArabic-Regular.ttf
+	NotoNaskhArabic-Regular.ttf \
 	Roboto-BlackItalic.ttf \
 	Roboto-Black.ttf \
 	Roboto-BoldItalic.ttf \
