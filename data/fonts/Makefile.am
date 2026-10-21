@@ -20,7 +20,6 @@ dist_install_DATA = \
 	Roboto-Black.ttf \
 	Roboto-BoldItalic.ttf \
 	Roboto-Bold.ttf \
-	valis_enigma.ttf \
 	wqy-microhei.ttc \
 	enigma2icons.ttf
 
