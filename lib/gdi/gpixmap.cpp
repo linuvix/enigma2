@@ -804,12 +804,19 @@ void gPixmap::drawRectangle(const gRegion& region, const eRect& area, const gRGB
 
 	const int maxGradientSize = (direction == GRADIENT_VERTICAL) ? area.height() : area.width();
 	const int gradientSize = (gradientFullSize) ? MAX(gradientFullSize, maxGradientSize) : maxGradientSize;
-	if (!direction)
+
+	// FIX: guard against gradientColors.size() < 2 to avoid std::out_of_range
+	// (-> std::terminate, since enigma2 builds with -fno-exceptions) from a
+	// malformed skin that sets direction != 0 without providing colors.
+	if (!direction) {
 		gradientBuf = createGradientBuffer2(gradientSize, backgroundColor, backgroundColor);
-	else if (gradientColors.size() == 2 || gradientColors.at(1) == gradientColors.at(2))
+	} else if (gradientColors.size() < 2) {
+		gradientBuf = createGradientBuffer2(gradientSize, backgroundColor, backgroundColor);
+	} else if (gradientColors.size() == 2 || gradientColors.at(1) == gradientColors.at(2)) {
 		gradientBuf = createGradientBuffer2(gradientSize, gradientColors.at(0), gradientColors.at(1));
-	else
+	} else {
 		gradientBuf = createGradientBuffer3(gradientSize, gradientColors);
+	}
 
 	CornerData cornerData(radius, edges, area.width(), area.height(), borderWidth, borderCol);
 
