@@ -96,7 +96,12 @@ void eWidgetDesktop::calcWidgetClipRegion(eWidget *widget, gRegion &parent_visib
 		widget->m_visible_region.moveBy(widget->position());
 		widget->m_visible_region &= parent_visible; // in parent space!
 
-		if (!widget->isTransparent() && (widget->m_cornerRadius == 0 || parent))
+		// An alphablended gradient widget must not occlude what's behind it
+		// (same principle as a fully transparent widget), so keep the parent's
+		// visible region intact in that case. Otherwise siblings drawn before
+		// this widget in Z-order will be clipped away and leave visual holes
+		// behind a semi-transparent gradient.
+		if (!widget->isTransparent() && (!widget->m_gradient_alphablend || parent) && (widget->m_cornerRadius == 0 || parent))
 				/* remove everything this widget will contain from parent's visible list, unless widget is transparent. */
 			parent_visible -= widget->m_visible_region; // will remove child regions too!
 
