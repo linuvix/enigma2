@@ -21,7 +21,8 @@ dist_install_DATA = \
 	Roboto-BoldItalic.ttf \
 	Roboto-Bold.ttf \
 	valis_enigma.ttf \
-	wqy-microhei.ttc
+	wqy-microhei.ttc \
+	enigma2icons.ttf
 
 install-data-hook:
 	cd $(DESTDIR)$(datadir)/fonts && \
