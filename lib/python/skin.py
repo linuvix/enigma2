@@ -428,36 +428,48 @@ def parseGradient(value):
 	- Each color is either "#aarrggbb" or a named color from `colors`.
 	- direction: "horizontal" or "vertical".
 	- alphablend: "1", "0", "on", "off", "true", "false".
-
-	A named gradient entry in `gradients` resolves to its stored spec.
-	Values that are not gradient-like (a single color) are returned as a
-	one-stop gradient with both endpoints equal to that color, so the same
-	parser can be used uniformly.
+	- Direction and alphablend are optional; direction defaults to vertical.
+	- A 2-color spec ("start,end") is expanded to (start, end, end).
+	- A 1-color spec is invalid and raises SkinError.
 	"""
-	def validColor(value):
-		if value[0] == "#" and len(value) in (9, 7):
+	def validColor(v):
+		if v and v[0] == "#" and len(v) in (9, 7):
 			return True
-		return value in colors
+		return v in colors
 
 	value = gradients.get(value, value)
 	data = [x.strip() for x in value.split(",")]
-	gradientColors = [gRGB(0x00000000), gRGB(0x00FFFFFF), gRGB(0x00FFFFFF)]  # Start color, center color, end color.
-	index = 0
-	for index, color in enumerate(data):
-		if not validColor(color) or index > 2:
+	gradientColors = [gRGB(0x00000000), gRGB(0x00FFFFFF), gRGB(0x00FFFFFF)]
+
+	# Consume up to 3 leading entries as colors.  Track how many we accepted
+	# separately from `index` so the "loop finished vs. broke early" case
+	# is unambiguous.
+	consumed = 0
+	for i, color in enumerate(data):
+		if i > 2 or not validColor(color):
 			break
-		gradientColors[index] = parseColor(color)
-	if index == 2:
+		gradientColors[i] = parseColor(color)
+		consumed = i + 1
+
+	if consumed < 2:
+		raise SkinError("Gradient '%s' must be 'startColor[,centerColor],endColor,direction[,alphaBlend]'" % value)
+
+	# 2-color form: expand to (start, end, end)
+	if consumed == 2:
 		gradientColors[2] = gradientColors[1]
-	argCount = len(data) - index
-	if index > 1 and argCount:
+
+	# Parse optional direction / alphablend from what remains after the colors.
+	remaining = data[consumed:]
+	direction = eWidget.GRADIENT_VERTICAL
+	alphaBlend = 0
+	if remaining:
 		direction = {
 			"horizontal": eWidget.GRADIENT_HORIZONTAL,
 			"vertical": eWidget.GRADIENT_VERTICAL
-		}.get(data[index], eWidget.GRADIENT_VERTICAL)
-		alphaBlend = 1 if argCount > 1 and parseBoolean("alphablend", data[index + 1]) else 0
-	else:
-		raise SkinError("Gradient '%s' must be 'startColor[,centerColor],endColor,direction[,alphaBlend]'" % value)
+		}.get(remaining[0].lower(), eWidget.GRADIENT_VERTICAL)
+		if len(remaining) > 1:
+			alphaBlend = 1 if parseBoolean("alphablend", remaining[1]) else 0
+
 	return (gradientColors[0], gradientColors[1], gradientColors[2], direction, alphaBlend)
 
 
@@ -784,6 +796,33 @@ class AttributeParser:
 		# cleanly instead of logging a "must be #aarrggbb" error and falling back
 		# to a widget default.
 		self.guiObject.setBackgroundColor(parseColorOrGradient(value))
+
+	def backgroundColorGradient(self, value):
+		# Real gradient background (OpenViX/OpenATV compatible).
+		# Requires the C++ eWidget::setBackgroundGradient(start, mid, end, direction, blend)
+		# which this fork now has.
+		# Syntax: "start[,mid],end,direction[,alphablend]"
+		# e.g.   "#FFFF0000,#FF00FF00,#FF0000FF,horizontal,1"
+		start, mid, end, direction, blend = parseGradient(value)
+		self.guiObject.setBackgroundGradient(start, mid, end, direction, blend)
+
+	def itemGradient(self, value):
+		# eListbox item background gradient (normal state).
+		# Requires eListbox::setItemGradient(start, mid, end, direction, blend).
+		start, mid, end, direction, blend = parseGradient(value)
+		self.guiObject.setItemGradient(start, mid, end, direction, blend)
+
+	def itemGradientSelected(self, value):
+		# eListbox item background gradient (selected state).
+		# Requires eListbox::setItemGradientSelected(start, mid, end, direction, blend).
+		start, mid, end, direction, blend = parseGradient(value)
+		self.guiObject.setItemGradientSelected(start, mid, end, direction, blend)
+
+	def foregroundColorGradient(self, value):
+		# eSlider supports a foreground gradient; eLabel/ePixmap do not.
+		# AttributeError is caught by applyOne(), which just logs it.
+		start, mid, end, direction, blend = parseGradient(value)
+		self.guiObject.setForegroundGradient(start, mid, end, direction, blend)
 
 	def backgroundColorSelected(self, value):
 		self.guiObject.setBackgroundColorSelected(parseColorOrGradient(value))
