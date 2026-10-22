@@ -111,7 +111,6 @@ class pServiceEvent:
 	def getLinkageService(self):
 		return 0
 
-	# --- added: methods missing from OpenPLi's pServiceEvent (openatv 91042d2) ---
 	def getCridData(self, types):
 		return []
 
@@ -120,7 +119,6 @@ class pServiceEvent:
 
 	def getGenreDataList(self):
 		return []
-	# ----------------------------------------------------------------------------
 
 
 class EventInfo(PerServiceBase, Source):
