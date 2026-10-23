@@ -123,6 +123,44 @@ _RE_URL_PATTERNS = (
     re.compile(r'(mms://[^\s]+)', re.IGNORECASE),
 )
 
+# Extended stream-type / container hints (used by IPTV parsing)
+_RE_STREAM_HINTS = (
+    ("m3u8", "HLS"),
+    ("hls", "HLS"),
+    ("mpd", "DASH"),
+    ("dash", "DASH"),
+    ("ism", "SmoothStreaming"),
+    ("type=ts", "TS"),
+    ("format=ts", "TS"),
+)
+
+_RE_CONTAINER_HINTS = (
+    (".m3u8", "HLS"),
+    (".mpd", "DASH"),
+    (".ism", "ISM"),
+    (".ts", "TS"),
+    (".mp4", "MP4"),
+    (".mkv", "MKV"),
+    (".flv", "FLV"),
+    (".avi", "AVI"),
+    (".webm", "WebM"),
+)
+
+# Audio codec names. NOTE: sAudioType is NOT present in this tree's
+# iServiceInformation enum, so _audio_codec_name() returns "".
+_AUDIO_CODEC_NAMES = {
+    0: "MPEG",
+    1: "AC3",
+    2: "AC4",
+    3: "DDP",
+    4: "AAC",
+    5: "AACHE",
+    6: "DTS",
+    7: "DTSHD",
+    8: "LPCM",
+    9: "DRA",
+}
+
 
 def addspace(text):
     if text:
@@ -176,20 +214,33 @@ def _read_proc_int(path, base=10):
 
 
 class PliExtraInfo(Poll, Converter):
-    """Full featured PliExtraInfo for DreamBox DM920 with IPTV support"""
+    """Full featured PliExtraInfo for DreamBox DM920 with IPTV support.
 
-    # Type constants
+    Crypto fixes ported from OpenViX commits:
+      4bd6d69 - reject /tmp/ecm.info that belongs to another service (ECM PID check)
+      2a9c832 - don't display encrypted data for an FTA service (sIsCrypted gate)
+    """
+
+    # Type constants - crypto
     CryptoInfo = "CryptoInfo"
     CryptoBar = "CryptoBar"
     CryptoSpecial = "CryptoSpecial"
+    CurrentCrypto = "CurrentCrypto"
+    CryptoNameCaid = "CryptoNameCaid"
+
+    # Video
     Resolution = "Resolution"
     ResolutionString = "ResolutionString"
     VideoCodec = "VideoCodec"
     Gamma = "Gamma"
+
+    # Aggregate
     Settings = "Settings"
     All = "All"
     PIDInfo = "PIDInfo"
     ServiceInfo = "ServiceInfo"
+
+    # Transponder
     TransponderInfo = "TransponderInfo"
     TransponderFrequency = "TransponderFrequency"
     TransponderSymbolRate = "TransponderSymbolRate"
@@ -203,15 +254,28 @@ class PliExtraInfo(Poll, Converter):
     TerrestrialChannelNumber = "TerrestrialChannelNumber"
     TransponderInfoMisPls = "TransponderInfoMisPls"
     TransponderName = "TransponderName"
-    CurrentCrypto = "CurrentCrypto"
-    CryptoNameCaid = "CryptoNameCaid"
+
+    # Service
     ServiceRef = "ServiceRef"
     ProviderName = "ProviderName"
+
     # IPTV specific types
     IPTVInfo = "IPTVInfo"
     IPTVUrl = "IPTVUrl"
     IPTVStreamType = "IPTVStreamType"
     IPTVHost = "IPTVHost"
+    IPTVProtocol = "IPTVProtocol"
+    IPTVPort = "IPTVPort"
+    IPTVPath = "IPTVPath"
+    IPTVContainer = "IPTVContainer"
+    IPTVAudioCodec = "IPTVAudioCodec"
+    IPTVAudioLang = "IPTVAudioLang"
+    IPTVBitrate = "IPTVBitrate"
+    IPTVSummary = "IPTVSummary"
+    IPTVIsIPTV = "IPTVIsIPTV"
+
+    # Empty ecm data sentinel. 4-tuple, matching GetEcmInfo.EMPTY_ECM_INFO.
+    NO_ECM_DATA = ("", "0", "0", "0")
 
     def __init__(self, type):
         Converter.__init__(self, type)
@@ -276,6 +340,13 @@ class PliExtraInfo(Poll, Converter):
         self.iptv_stream_type = ""
         self.iptv_full_ref = ""
 
+        # v2: cached /proc/stb/vmpeg reads; invalidated on program change
+        self._vmpeg_cache = None
+
+        # 4bd6d69: last ecm.info data that belonged to a given service ref.
+        # Shared across instances, keyed by service reference.
+        self._own_ecm = ("", None)
+
         # Cached colors (avoid dict lookup every poll)
         try:
             self.cryptocolors = parameters.get("PliExtraInfoCryptoColors",
@@ -289,14 +360,65 @@ class PliExtraInfo(Poll, Converter):
         except Exception:
             self.bar_colors = (0x0000FF00, 0x00FF0000, 0x00FFFFFF, 0x007F7F7F)
 
-        # v2: cached /proc/stb/vmpeg reads; invalidated on program change
-        self._vmpeg_cache = None
-
     def _safe_int(self, value, default=0):
         return _safe_int(value, default)
 
     def _safe_str(self, value, default=""):
         return _safe_str(value, default)
+
+    # ------------------------------------------------------------------
+    # Crypto: OpenViX 4bd6d69 + 2a9c832 ports
+    # ------------------------------------------------------------------
+
+    def _service_ecm_pids(self, info):
+        """The ECM PIDs of the service (what the PMT says), empty if unknown.
+
+        Port of OpenViX 4bd6d69 serviceEcmPids().
+        """
+        try:
+            return {pair[1] for pair in info.getInfoObject(iServiceInformation.sCAIDPIDs)}
+        except Exception:
+            return set()
+
+    def _is_service_fta(self, info):
+        """True if this service is free-to-air.
+
+        Port of OpenViX 2a9c832 ecmFilePresentFor() logic, adapted because
+        sIsScrambled is not available in this tree's iServiceInformation
+        enum. We use sIsCrypted only, which fixes the reported bug:
+        an FTA service on the playing slot no longer displays the
+        recording service's encryption status.
+        """
+        if info is None:
+            return False
+        return info.getInfo(iServiceInformation.sIsCrypted) != 1
+
+    def _ecm_data_for(self, info):
+        """The data of /tmp/ecm.info for the current service.
+
+        Port of OpenViX 4bd6d69 ecmDataFor(). With two services decoding
+        (a recording and the one playing) the softcam writes the file for
+        both in turn, so what is in it is only the current service's if
+        its ECM PID is one of the service's. Otherwise the last data that
+        was the current service's is used, and without any nothing is
+        known. If the ECM PID of either side is not known the file is
+        taken as it is.
+        """
+        data = self.ecmdata.getEcmData()
+        if not info or not pathExists("/tmp/ecm.info"):
+            return data
+        pids = self._service_ecm_pids(info)
+        try:
+            ecmpid = int(self._safe_str(data[3], "0"), 16)
+        except (TypeError, ValueError):
+            ecmpid = 0
+        if not pids or not ecmpid:
+            return data
+        ref = self._safe_str(info.getInfoString(iServiceInformation.sServiceref), "")
+        if ecmpid in pids:
+            self._own_ecm = (ref, data)
+            return data
+        return self._own_ecm[1] if self._own_ecm[0] == ref else self.NO_ECM_DATA
 
     # ------------------------------------------------------------------
     # IPTV detection & parsing
@@ -317,14 +439,12 @@ class PliExtraInfo(Poll, Converter):
         if not url:
             return url
 
-        # Remove everything after the last colon if it looks like a channel name
         match = _RE_IPTV_TRIM_CHANNEL.search(url)
         if match:
             after_colon = url.split(':')[-1]
             if not after_colon.isdigit() and '/' not in after_colon and '?' not in after_colon:
                 return match.group(1)
 
-        # Handle case where URL ends with :ChannelName without any path
         match = _RE_IPTV_TRIM_CHANNEL2.search(url)
         if match:
             after = match.group(2)
@@ -386,34 +506,125 @@ class PliExtraInfo(Poll, Converter):
                     host = host.split('@')[-1]
                 if ':' in host:
                     host = host.split(':')[0]
-                if url.startswith('http://') or url.startswith('https://'):
-                    if '.m3u8' in url.lower():
-                        stream_type = 'HLS'
-                    elif '.ts' in url.lower():
-                        stream_type = 'TS'
+
+                low = url.lower()
+                if low.startswith(('http://', 'https://')):
+                    for hint, name in _RE_STREAM_HINTS:
+                        if hint in low:
+                            stream_type = name
+                            break
                     else:
-                        stream_type = 'HTTP'
-                elif url.startswith('rtsp://'):
-                    stream_type = 'RTSP'
-                elif url.startswith('rtmp://'):
-                    stream_type = 'RTMP'
-                elif url.startswith('udp://'):
-                    stream_type = 'UDP'
-                elif url.startswith('rtp://'):
-                    stream_type = 'RTP'
-                elif url.startswith('mms://'):
-                    stream_type = 'MMS'
+                        stream_type = "HTTP"
+                elif low.startswith('rtsp://'):
+                    stream_type = "RTSP"
+                elif low.startswith('rtmp://'):
+                    stream_type = "RTMP"
+                elif low.startswith('udp://'):
+                    stream_type = "UDP"
+                elif low.startswith('rtp://'):
+                    stream_type = "RTP"
+                elif low.startswith('mms://'):
+                    stream_type = "MMS"
             except Exception:
                 pass
 
         return url, host, stream_type
 
     # ------------------------------------------------------------------
+    # IPTV extended helpers
+    # ------------------------------------------------------------------
+
+    def _parse_iptv_protocol(self, url):
+        if not url:
+            return ""
+        try:
+            return urlparse(url).scheme.lower()
+        except Exception:
+            return ""
+
+    def _parse_iptv_port(self, url):
+        if not url:
+            return ""
+        try:
+            p = urlparse(url).port
+            return str(p) if p else ""
+        except Exception:
+            return ""
+
+    def _parse_iptv_path(self, url):
+        if not url:
+            return ""
+        try:
+            parsed = urlparse(url)
+            path = parsed.path or ""
+            if parsed.query:
+                path += "?" + parsed.query
+            return path
+        except Exception:
+            return ""
+
+    def _detect_container(self, url, stream_type):
+        """Best-effort container name from URL extension or stream type."""
+        if stream_type in ("HLS", "DASH"):
+            return stream_type
+        if url:
+            low = url.lower()
+            for ext, name in _RE_CONTAINER_HINTS:
+                if ext in low:
+                    return name
+            for hint, name in _RE_STREAM_HINTS:
+                if hint in low:
+                    return name
+        return stream_type or ""
+
+    def _audio_codec_name(self, info):
+        """Audio codec name. sAudioType is absent in this tree's enum,
+        so this returns '' on BlackSail (safe)."""
+        try:
+            if not hasattr(iServiceInformation, "sAudioType"):
+                return ""
+            atype = info.getInfo(iServiceInformation.sAudioType)
+            if atype is None or atype < 0:
+                return ""
+            return _AUDIO_CODEC_NAMES.get(atype, "")
+        except Exception:
+            return ""
+
+    def _audio_language(self, info):
+        """Selected audio track's language via iAudioTrackSelection."""
+        try:
+            service = self.source.service
+            if service is None:
+                return ""
+            at = service.audioTracks()
+            if at is None:
+                return ""
+            idx = at.getCurrentTrack()
+            if idx is None or idx < 0:
+                return ""
+            tinfo = at.getTrackInfo(idx)
+            if tinfo is None:
+                return ""
+            return tinfo.getLanguage() or ""
+        except Exception:
+            return ""
+
+    def _bitrate_string(self, info):
+        """Bitrate in Mb/s via sTransferBPS (works on IPTV too, when supported)."""
+        try:
+            bps = info.getInfo(iServiceInformation.sTransferBPS)
+            if bps is None or bps <= 0:
+                return ""
+            return "%.1f Mb/s" % (bps / 1000000.0)
+        except Exception:
+            return ""
+
+    # ------------------------------------------------------------------
     # Crypto data refresh
     # ------------------------------------------------------------------
 
     def getCryptoInfo(self, info):
-        """Get crypto information"""
+        """Get crypto information (uses _ecm_data_for -> 4bd6d69 fix)."""
         try:
             refstr = info.getInfoString(iServiceInformation.sServiceref)
             if refstr:
@@ -430,7 +641,7 @@ class PliExtraInfo(Poll, Converter):
             self.is_iptv = False
 
         if info.getInfo(iServiceInformation.sIsCrypted) == 1:
-            data = self.ecmdata.getEcmData()
+            data = self._ecm_data_for(info)
             if data and len(data) >= 4:
                 self.current_source = self._safe_str(data[0], "")
                 self.current_caid = self._safe_str(data[1], "0")
@@ -491,7 +702,12 @@ class PliExtraInfo(Poll, Converter):
         return res
 
     def createCurrentCaidLabel(self, info):
-        """Create current CAID label with CI support"""
+        """Current CAID label with CI support.
+
+        Uses _is_service_fta (2a9c832) instead of the bare ecm.info existence
+        check: an ecm.info left over by a recording service no longer makes
+        an FTA service look encrypted.
+        """
         if self.is_iptv:
             return "IPTV"
 
@@ -509,10 +725,14 @@ class PliExtraInfo(Poll, Converter):
                 except Exception:
                     pass
 
-        if not pathExists("/tmp/ecm.info") and decodingCiSlot == -1:
+        # 2a9c832: /tmp/ecm.info only counts as present for THIS service
+        # if the service is actually encrypted.
+        ecm_present = not self._is_service_fta(info) and pathExists("/tmp/ecm.info")
+
+        if not ecm_present and decodingCiSlot == -1:
             return "FTA"
 
-        if decodingCiSlot > -1 and not pathExists("/tmp/ecm.info"):
+        if decodingCiSlot > -1 and not ecm_present:
             return "CI%d" % (decodingCiSlot)
 
         current_caid_int = self._safe_int(self.current_caid, 0)
@@ -600,50 +820,79 @@ class PliExtraInfo(Poll, Converter):
     # ============ IPTV SPECIFIC METHODS ============
 
     def createIPTVInfo(self, info):
-        """Get IPTV information - shows URL with stream type"""
-        if self.is_iptv:
-            if self.iptv_url and self.iptv_stream_type:
-                return "%s (%s)" % (self.iptv_url, self.iptv_stream_type)
-            elif self.iptv_url:
-                return self.iptv_url
-            elif self.iptv_host:
-                return self.iptv_host
-        return ""
+        """Richer IPTV info: [CONTAINER] host url"""
+        if not self.is_iptv:
+            return ""
+        container = self._detect_container(self.iptv_url, self.iptv_stream_type)
+        bits = []
+        if container:
+            bits.append("[%s]" % container)
+        if self.iptv_host:
+            bits.append(self.iptv_host)
+        if self.iptv_url and self.iptv_url != self.iptv_host:
+            bits.append(self.iptv_url)
+        return " ".join(bits)
 
     def createIPTVUrl(self, info):
-        """Get IPTV URL - cleaned without channel name"""
         if self.is_iptv and self.iptv_url:
             return self.iptv_url
         return ""
 
     def createIPTVStreamType(self, info):
-        """Get IPTV stream type only"""
         if self.is_iptv and self.iptv_stream_type:
             return self.iptv_stream_type
         return ""
 
     def createIPTVHost(self, info):
-        """Get IPTV host only"""
         if self.is_iptv and self.iptv_host:
             return self.iptv_host
         return ""
 
+    def createIPTVProtocol(self, info):
+        return self._parse_iptv_protocol(self.iptv_url) if self.is_iptv else ""
+
+    def createIPTVPort(self, info):
+        return self._parse_iptv_port(self.iptv_url) if self.is_iptv else ""
+
+    def createIPTVPath(self, info):
+        return self._parse_iptv_path(self.iptv_url) if self.is_iptv else ""
+
+    def createIPTVContainer(self, info):
+        if not self.is_iptv:
+            return ""
+        return self._detect_container(self.iptv_url, self.iptv_stream_type)
+
+    def createIPTVAudioCodec(self, info):
+        return self._audio_codec_name(info) if self.is_iptv else ""
+
+    def createIPTVAudioLang(self, info):
+        return self._audio_language(info) if self.is_iptv else ""
+
+    def createIPTVBitrate(self, info):
+        return self._bitrate_string(info) if self.is_iptv else ""
+
+    def createIPTVSummary(self, info):
+        if not self.is_iptv:
+            return ""
+        parts = (
+            self.createIPTVContainer(info),
+            self.createResolution(info),
+            self.createVideoCodec(info),
+            self.createIPTVAudioCodec(info),
+            self.createIPTVAudioLang(info),
+            self.createIPTVBitrate(info),
+        )
+        return " ".join(p for p in parts if p)
+
     # ============ VIDEO METHODS ============
 
     def _read_vmpeg_info(self):
-        """Read /proc/stb/vmpeg/0/ data once and cache it.
-
-        DM920 writes xres/yres as hexadecimal strings without '0x'.
-        Values are cached until the next program-change event.
-        """
         if self._vmpeg_cache is not None:
             return self._vmpeg_cache
 
         xres = _read_proc_int("/proc/stb/vmpeg/0/xres", 16)
         yres = _read_proc_int("/proc/stb/vmpeg/0/yres", 16)
 
-        # sanity: 0, absurd values, or the infamous 64x64 dummy resolution 
-        # mean "no video yet" or the decoder is in a transitional state.
         if not xres or not yres or xres > 4096 or yres > 4096 or (xres <= 128 and yres <= 128):
             self._vmpeg_cache = ("", "", "")
             return self._vmpeg_cache
@@ -666,24 +915,20 @@ class PliExtraInfo(Poll, Converter):
         return self._vmpeg_cache
 
     def createResolution(self, info):
-        """Get video resolution, prioritizing the standard API over /proc reads."""
-        # 1. Use the reliable Enigma2 API (exactly like the original OpenPLi)
         xres = info.getInfo(iServiceInformation.sVideoWidth)
         yres = info.getInfo(iServiceInformation.sVideoHeight)
         prog = info.getInfo(iServiceInformation.sProgressive)
 
-        # 2. If the API returns valid dimensions, use them
         if xres > 0 and yres > 0:
             mode = ("i", "p", " ")[prog]
             fps = (info.getInfo(iServiceInformation.sFrameRate) + 500) // 1000
             if not fps or fps == -1:
                 try:
                     fps = (int(open("/proc/stb/vmpeg/0/framerate", "r").read()) + 500) // 1000
-                except:
+                except Exception:
                     pass
             return "%sx%s%s%s" % (xres, yres, mode, fps)
 
-        # 3. Fallback for IPTV (where the API often returns -1)
         cached = self._read_vmpeg_info()
         if cached and cached[0] != "":
             xres, yres, mode, fps = cached
@@ -694,7 +939,6 @@ class PliExtraInfo(Poll, Converter):
         return ""
 
     def createGamma(self, info):
-        """Get gamma/HDR information"""
         try:
             gamma = info.getInfo(iServiceInformation.sGamma)
             return gamma_data.get(gamma, "")
@@ -702,7 +946,6 @@ class PliExtraInfo(Poll, Converter):
             return ""
 
     def createVideoCodec(self, info):
-        """Get video codec name"""
         try:
             video_type = info.getInfo(iServiceInformation.sVideoType)
             return codec_data.get(video_type, "N/A")
@@ -710,7 +953,6 @@ class PliExtraInfo(Poll, Converter):
             return "N/A"
 
     def createResolutionString(self, info):
-        """Get resolution with gamma"""
         resolution = self.createResolution(info)
         gamma = self.createGamma(info)
         if resolution and gamma:
@@ -720,7 +962,6 @@ class PliExtraInfo(Poll, Converter):
     # ============ PID METHODS ============
 
     def createPIDInfo(self, info):
-        """Create PID information string"""
         try:
             vpid = info.getInfo(iServiceInformation.sVideoPID)
             apid = info.getInfo(iServiceInformation.sAudioPID)
@@ -743,7 +984,6 @@ class PliExtraInfo(Poll, Converter):
     # ============ SERVICE METHODS ============
 
     def createProviderName(self, info):
-        """Get provider name"""
         try:
             provider = info.getInfoString(iServiceInformation.sProvider)
             if provider:
@@ -756,7 +996,6 @@ class PliExtraInfo(Poll, Converter):
         return ""
 
     def createServiceRef(self, info):
-        """Get service reference"""
         try:
             ref = info.getInfoString(iServiceInformation.sServiceref)
             return self._safe_str(ref, "") if ref else ""
@@ -766,7 +1005,6 @@ class PliExtraInfo(Poll, Converter):
     # ============ TRANSPONDER METHODS ============
 
     def createTransponderInfo(self, fedata, feraw, info):
-        """Create transponder information"""
         if self.is_iptv:
             return self.iptv_url if self.iptv_url else self.iptv_host or ""
 
@@ -792,7 +1030,6 @@ class PliExtraInfo(Poll, Converter):
                 addspace(self.createMisPls(fedata)))
 
     def createFrequency(self, fedata):
-        """Get frequency"""
         try:
             frequency = fedata.get("frequency")
             if frequency:
@@ -804,7 +1041,6 @@ class PliExtraInfo(Poll, Converter):
         return ""
 
     def createChannelNumber(self, fedata, feraw):
-        """Get terrestrial channel number"""
         try:
             tuner_type = self._safe_str(feraw.get("tuner_type", ""))
             if "DVB-T" in tuner_type:
@@ -815,7 +1051,6 @@ class PliExtraInfo(Poll, Converter):
         return ""
 
     def createSymbolRate(self, fedata, feraw):
-        """Get symbol rate"""
         try:
             tuner_type = self._safe_str(feraw.get("tuner_type", ""))
             if "DVB-T" in tuner_type:
@@ -830,7 +1065,6 @@ class PliExtraInfo(Poll, Converter):
         return ""
 
     def createPolarization(self, fedata):
-        """Get polarization"""
         try:
             pol = fedata.get("polarization_abbreviation")
             return self._safe_str(pol, "") if pol else ""
@@ -838,7 +1072,6 @@ class PliExtraInfo(Poll, Converter):
             return ""
 
     def createFEC(self, fedata, feraw):
-        """Get FEC information"""
         try:
             tuner_type = self._safe_str(feraw.get("tuner_type", ""))
             if "DVB-T" in tuner_type:
@@ -846,7 +1079,9 @@ class PliExtraInfo(Poll, Converter):
                 code_rate_hp = fedata.get("code_rate_hp")
                 guard_interval = fedata.get("guard_interval")
                 if code_rate_lp and code_rate_hp and guard_interval:
-                    return self._safe_str(code_rate_lp) + "-" + self._safe_str(code_rate_hp) + "-" + self._safe_str(guard_interval)
+                    return (self._safe_str(code_rate_lp) + "-" +
+                            self._safe_str(code_rate_hp) + "-" +
+                            self._safe_str(guard_interval))
             else:
                 fec = fedata.get("fec_inner")
                 if fec:
@@ -856,7 +1091,6 @@ class PliExtraInfo(Poll, Converter):
         return ""
 
     def createModulation(self, fedata):
-        """Get modulation"""
         try:
             tuner_type = self._safe_str(fedata.get("tuner_type", ""))
             if tuner_type == _("Terrestrial") or tuner_type == "Terrestrial":
@@ -872,7 +1106,6 @@ class PliExtraInfo(Poll, Converter):
         return ""
 
     def createTunerType(self, feraw):
-        """Get tuner type"""
         try:
             tuner_type = feraw.get("tuner_type")
             return self._safe_str(tuner_type, "") if tuner_type else ""
@@ -880,7 +1113,6 @@ class PliExtraInfo(Poll, Converter):
             return ""
 
     def createTunerSystem(self, fedata):
-        """Get tuner system"""
         try:
             system = fedata.get("system")
             return self._safe_str(system, "") if system else ""
@@ -888,7 +1120,6 @@ class PliExtraInfo(Poll, Converter):
             return ""
 
     def createOrbPos(self, feraw):
-        """Get orbital position"""
         try:
             orbpos = feraw.get("orbital_position")
             if orbpos:
@@ -901,14 +1132,12 @@ class PliExtraInfo(Poll, Converter):
         return ""
 
     def createOrbPosOrTunerSystem(self, fedata, feraw):
-        """Get orbital position or tuner system"""
         orbpos = self.createOrbPos(feraw)
         if orbpos != "":
             return orbpos
         return self.createTunerSystem(fedata)
 
     def createTransponderName(self, feraw):
-        """Get transponder/satellite name"""
         try:
             orbpos = feraw.get("orbital_position")
             if orbpos is None:
@@ -922,7 +1151,6 @@ class PliExtraInfo(Poll, Converter):
         return ""
 
     def createMisPls(self, fedata):
-        """Create MIS/PLS information"""
         if not fedata:
             return ""
         tmp = ""
@@ -947,7 +1175,6 @@ class PliExtraInfo(Poll, Converter):
 
     @cached
     def getText(self):
-        """Main getText method"""
         service = self.source.service
         if service is None:
             return ""
@@ -973,13 +1200,31 @@ class PliExtraInfo(Poll, Converter):
                 return self.createIPTVStreamType(info)
             if self.type == "IPTVHost":
                 return self.createIPTVHost(info)
+            if self.type == "IPTVProtocol":
+                return self.createIPTVProtocol(info)
+            if self.type == "IPTVPort":
+                return self.createIPTVPort(info)
+            if self.type == "IPTVPath":
+                return self.createIPTVPath(info)
+            if self.type == "IPTVContainer":
+                return self.createIPTVContainer(info)
+            if self.type == "IPTVAudioCodec":
+                return self.createIPTVAudioCodec(info)
+            if self.type == "IPTVAudioLang":
+                return self.createIPTVAudioLang(info)
+            if self.type == "IPTVBitrate":
+                return self.createIPTVBitrate(info)
+            if self.type == "IPTVSummary":
+                return self.createIPTVSummary(info)
 
             # === CRYPTO TYPES ===
             if self.type == "CryptoInfo":
                 if show_crypto:
                     return addspace(self.createCryptoBar(info)) + self.createCryptoSpecial(info)
                 else:
-                    return addspace(self.createCryptoBar(info)) + addspace(self.current_source) + self.createCryptoSpecial(info)
+                    return (addspace(self.createCryptoBar(info)) +
+                            addspace(self.current_source) +
+                            self.createCryptoSpecial(info))
 
             if self.type == "CurrentCrypto":
                 return self.createCurrentCaidLabel(info)
@@ -1021,7 +1266,6 @@ class PliExtraInfo(Poll, Converter):
                     except Exception:
                         pass
 
-            # Get transponder data
             feraw = self.feraw
             if not feraw:
                 try:
@@ -1041,19 +1285,14 @@ class PliExtraInfo(Poll, Converter):
 
             fedata = self.fedata
 
-            # === ALL - IPTV: Codec/Resolution first, URL below ===
+            # === ALL ===
             if self.type == "All":
                 if self.is_iptv:
                     provider = self.createProviderName(info)
-                    codec = self.createVideoCodec(info)
-                    resolution = self.createResolution(info)
-                    gamma = self.createGamma(info)
-                    iptv_display = self.iptv_url if self.iptv_url else self.iptv_host
-
-                    first_line = addspace(provider) + addspace(codec) + addspace(resolution) + gamma
-                    second_line = iptv_display
-
-                    return first_line + "\n" + second_line
+                    summary = self.createIPTVSummary(info)
+                    url = self.iptv_url if self.iptv_url else self.iptv_host
+                    line1 = (addspace(provider) + summary).rstrip()
+                    return line1 + "\n" + url
 
                 elif show_crypto:
                     return (addspace(self.createProviderName(info)) +
@@ -1078,16 +1317,13 @@ class PliExtraInfo(Poll, Converter):
             if self.type == "PIDInfo":
                 return self.createPIDInfo(info)
 
-            # === SERVICE INFO - IPTV: Codec/Resolution first, then URL ===
+            # === SERVICE INFO ===
             if self.type == "ServiceInfo":
                 if self.is_iptv:
                     provider = self.createProviderName(info)
-                    codec = self.createVideoCodec(info)
-                    resolution = self.createResolution(info)
-                    gamma = self.createGamma(info)
-                    iptv_display = self.iptv_url if self.iptv_url else self.iptv_host
-
-                    return addspace(provider) + addspace(codec) + addspace(resolution) + gamma + " " + iptv_display
+                    summary = self.createIPTVSummary(info)
+                    url = self.iptv_url if self.iptv_url else self.iptv_host
+                    return (addspace(provider) + summary + " " + url).rstrip()
 
                 return (addspace(self.createProviderName(info)) +
                         addspace(self.createTunerSystem(fedata)) +
@@ -1164,13 +1400,23 @@ class PliExtraInfo(Poll, Converter):
 
     @cached
     def getBool(self):
-        """Get boolean value for crypto indicators"""
+        """Boolean value for crypto indicators and IPTVIsIPTV.
+
+        Crypto path uses _ecm_data_for (4bd6d69) so that the recording
+        service's ecm.info is not mistaken for the playing service's.
+        """
         try:
             service = self.source.service
             info = service and service.info()
 
             if not info:
                 return False
+
+            # === IPTVIsIPTV ===
+            if self.type == "IPTVIsIPTV":
+                ref = self._safe_str(
+                    info.getInfoString(iServiceInformation.sServiceref), "")
+                return self._is_iptv_service(ref)
 
             request_caid = None
             request_selected = None
@@ -1186,7 +1432,8 @@ class PliExtraInfo(Poll, Converter):
             if info.getInfo(iServiceInformation.sIsCrypted) != 1:
                 return False
 
-            data = self.ecmdata.getEcmData()
+            # 4bd6d69: use _ecm_data_for so cross-service ecm.info doesn't leak
+            data = self._ecm_data_for(info)
             if data is None or len(data) < 2:
                 return False
 
@@ -1224,13 +1471,11 @@ class PliExtraInfo(Poll, Converter):
     boolean = property(getBool)
 
     def changed(self, what):
-        """Handle change events"""
         try:
             if what[0] == self.CHANGED_SPECIFIC:
                 self.updateFEdata = False
                 if what[1] == iPlayableService.evNewProgramInfo:
                     self.updateFEdata = True
-                    # v2: invalidate vmpeg cache on program change
                     self._vmpeg_cache = None
                 if what[1] == iPlayableService.evEnd:
                     self.feraw = None
