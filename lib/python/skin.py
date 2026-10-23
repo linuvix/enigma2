@@ -33,7 +33,6 @@ colors = {  # Dictionary of skin color names.
 	"key_text": gRGB(0x00ffffff),
 	"key_yellow": gRGB(0x00a08500)
 }
-gradients = {}  # Dictionary of skin color names whose value is a gradient spec.
 BodyFont = ("Regular", 20, 24, 18) # font which is used when a font alias definition is missing from the "fonts" dict.
 fonts = {  # Dictionary of predefined and skin defined font aliases.
 	"Body": BodyFont
@@ -215,8 +214,9 @@ def loadSkin(filename, scope=SCOPE_SKIN, desktop=getDesktop(GUI_SKIN_ID), screen
 
 
 def reloadSkins():
-	global domScreens, colors, gradients, fonts, menus, menuicons, parameters, screens, setups, switchPixmap
+	global domScreens, colors, fonts, menus, menuicons, parameters, screens, setups, switchPixmap
 	domScreens.clear()
+	colors.clear()
 	colors = {
 		"key_back": gRGB(0x00313131),
 		"key_blue": gRGB(0x0018188b),
@@ -225,7 +225,7 @@ def reloadSkins():
 		"key_text": gRGB(0x00ffffff),
 		"key_yellow": gRGB(0x00a08500)
 	}
-	gradients.clear()
+	fonts.clear()
 	fonts = {
 		"Body": BodyFont
 	}
@@ -418,83 +418,11 @@ def parseColor(s):
 	return gRGB(int(s[1:], 0x10))
 
 
-def parseGradient(value):
-	"""
-	Parse a gradient value into (startColor, midColor, endColor, direction, alphaBlend).
-
-	Syntax: "start[,mid],end,direction[,alphablend]"
-	- Each color is either "#aarrggbb" or a named color from `colors`.
-	- direction: "horizontal" or "vertical".
-	- alphablend: "1", "0", "on", "off", "true", "false".
-	- Direction and alphablend are optional; direction defaults to vertical.
-	- A 2-color spec ("start,end") is expanded to (start, end, end).
-	- A 1-color spec is invalid and raises SkinError.
-	"""
-	def validColor(v):
-		if v and v[0] == "#" and len(v) in (9, 7):
-			return True
-		return v in colors
-
-	value = gradients.get(value, value)
-	data = [x.strip() for x in value.split(",")]
-	gradientColors = [gRGB(0x00000000), gRGB(0x00FFFFFF), gRGB(0x00FFFFFF)]
-
-	# Consume up to 3 leading entries as colors.  Track how many we accepted
-	# separately from `index` so the "loop finished vs. broke early" case
-	# is unambiguous.
-	consumed = 0
-	for i, color in enumerate(data):
-		if i > 2 or not validColor(color):
-			break
-		gradientColors[i] = parseColor(color)
-		consumed = i + 1
-
-	if consumed < 2:
-		raise SkinError("Gradient '%s' must be 'startColor[,centerColor],endColor,direction[,alphaBlend]'" % value)
-
-	# 2-color form: expand to (start, end, end)
-	if consumed == 2:
-		gradientColors[2] = gradientColors[1]
-
-	# Parse optional direction / alphablend from what remains after the colors.
-	remaining = data[consumed:]
-	direction = eWidget.GRADIENT_VERTICAL
-	alphaBlend = 0
-	if remaining:
-		direction = {
-			"horizontal": eWidget.GRADIENT_HORIZONTAL,
-			"vertical": eWidget.GRADIENT_VERTICAL
-		}.get(remaining[0].lower(), eWidget.GRADIENT_VERTICAL)
-		if len(remaining) > 1:
-			alphaBlend = 1 if parseBoolean("alphablend", remaining[1]) else 0
-
-	return (gradientColors[0], gradientColors[1], gradientColors[2], direction, alphaBlend)
-
-
-def parseColorOrGradient(value, default=0x00FFFFFF):
-	"""
-	Accept either a flat color ('#aarrggbb' or named color) or a gradient
-	spec ('start[,mid],end,direction[,alphablend]').  Returns a single gRGB.
-
-	Used by call sites that can only store one gRGB per field
-	(eWindowStyleSkinned windowstyle colors, eListboxPythonMultiContent
-	item colors): a gradient is approximated by its first stop, which is
-	what those widgets visually degenerate to anyway.  This is a silent
-	fallback - no error is logged - so skins that use gradients in such
-	fields (Aglare-FHD-PLI, for example) load cleanly.
-	"""
-	if "," in value or value in gradients:
-		return parseGradient(value)[0]
-	return parseColor(value)
-
-
 def parseBoolean(attribute, value):
 	return value.lower() in ("1", attribute, "enabled", "on", "true", "yes")
 
 def parseParameter(s):
 	"""This function is responsible for parsing parameters in the skin, it can parse integers, floats, hex colors, hex integers, named colors, fonts and strings."""
-	if not s:  # Empty value.
-		return s
 	if s[0] == "*":  # String.
 		return s[1:]
 	elif s[0] == "#":  # HEX Color.
@@ -604,7 +532,7 @@ class AttributeParser:
 		return int(value) if self.scaleTuple[0][0] == self.scaleTuple[0][1] else int(int(value) * self.scaleTuple[0][0] / self.scaleTuple[0][1])
 
 	def applyVerticalScale(self, value):
-		return int(value) if self.scaleTuple[1][0] == self.scaleTuple[1][1] else int(int(value) * self.scaleTuple[1][0] / self.scaleTuple[1][1])
+		return int(value) if self.scaleTuple[0][0] == self.scaleTuple[0][1] else int(int(value) * self.scaleTuple[1][0] / self.scaleTuple[1][1])
 
 	def conditional(self, value):
 		pass
@@ -789,67 +717,34 @@ class AttributeParser:
 				print("[Skin] Error: Invalid flag '%s'!" % f)
 
 	def backgroundColor(self, value):
-		# Accept either a flat color or a gradient spec.  See parseColorOrGradient()'s
-		# comment; the C++ setters can only store one gRGB per background, so a
-		# gradient resolves to its first stop.  Skins that use gradients here
-		# (common in OpenATV-derived skins such as Aglare-FHD-PLI) now load
-		# cleanly instead of logging a "must be #aarrggbb" error and falling back
-		# to a widget default.
-		self.guiObject.setBackgroundColor(parseColorOrGradient(value))
-
-	def backgroundColorGradient(self, value):
-		# Real gradient background (OpenViX/OpenATV compatible).
-		# Requires the C++ eWidget::setBackgroundGradient(start, mid, end, direction, blend)
-		# which this fork now has.
-		# Syntax: "start[,mid],end,direction[,alphablend]"
-		# e.g.   "#FFFF0000,#FF00FF00,#FF0000FF,horizontal,1"
-		start, mid, end, direction, blend = parseGradient(value)
-		self.guiObject.setBackgroundGradient(start, mid, end, direction, blend)
-
-	def itemGradient(self, value):
-		# eListbox item background gradient (normal state).
-		# Requires eListbox::setItemGradient(start, mid, end, direction, blend).
-		start, mid, end, direction, blend = parseGradient(value)
-		self.guiObject.setItemGradient(start, mid, end, direction, blend)
-
-	def itemGradientSelected(self, value):
-		# eListbox item background gradient (selected state).
-		# Requires eListbox::setItemGradientSelected(start, mid, end, direction, blend).
-		start, mid, end, direction, blend = parseGradient(value)
-		self.guiObject.setItemGradientSelected(start, mid, end, direction, blend)
-
-	def foregroundColorGradient(self, value):
-		# eSlider supports a foreground gradient; eLabel/ePixmap do not.
-		# AttributeError is caught by applyOne(), which just logs it.
-		start, mid, end, direction, blend = parseGradient(value)
-		self.guiObject.setForegroundGradient(start, mid, end, direction, blend)
+		self.guiObject.setBackgroundColor(parseColor(value))
 
 	def backgroundColorSelected(self, value):
-		self.guiObject.setBackgroundColorSelected(parseColorOrGradient(value))
+		self.guiObject.setBackgroundColorSelected(parseColor(value))
 
 	def foregroundColor(self, value):
-		self.guiObject.setForegroundColor(parseColorOrGradient(value))
+		self.guiObject.setForegroundColor(parseColor(value))
 
 	def foregroundColorSelected(self, value):
-		self.guiObject.setForegroundColorSelected(parseColorOrGradient(value))
+		self.guiObject.setForegroundColorSelected(parseColor(value))
 
 	def foregroundNotCrypted(self, value):
-		self.guiObject.setForegroundColor(parseColorOrGradient(value))
+		self.guiObject.setForegroundColor(parseColor(value))
 
 	def backgroundNotCrypted(self, value):
-		self.guiObject.setBackgroundColor(parseColorOrGradient(value))
+		self.guiObject.setBackgroundColor(parseColor(value))
 
 	def foregroundCrypted(self, value):
-		self.guiObject.setForegroundColor(parseColorOrGradient(value))
+		self.guiObject.setForegroundColor(parseColor(value))
 
 	def backgroundCrypted(self, value):
-		self.guiObject.setBackgroundColor(parseColorOrGradient(value))
+		self.guiObject.setBackgroundColor(parseColor(value))
 
 	def foregroundEncrypted(self, value):
-		self.guiObject.setForegroundColor(parseColorOrGradient(value))
+		self.guiObject.setForegroundColor(parseColor(value))
 
 	def backgroundEncrypted(self, value):
-		self.guiObject.setBackgroundColor(parseColorOrGradient(value))
+		self.guiObject.setBackgroundColor(parseColor(value))
 
 	def shadowColor(self, value):
 		self.guiObject.setShadowColor(parseColor(value))
@@ -948,7 +843,7 @@ def reloadWindowStyles():
 def loadSingleSkinData(desktop, screenID, domSkin, pathSkin, scope=SCOPE_CURRENT_SKIN):
 	"""Loads skin data like colors, windowstyle etc."""
 	assert domSkin.tag == "skin", "root element in skin must be 'skin'!"
-	global colors, gradients, fonts, menus, parameters, screens, setups, switchPixmap
+	global colors, fonts, menus, parameters, screens, setups, switchPixmap
 	for tag in domSkin.findall("output"):
 		scrnID = int(tag.attrib.get("id", GUI_SKIN_ID))
 		if scrnID == GUI_SKIN_ID:
@@ -1043,10 +938,7 @@ def loadSingleSkinData(desktop, screenID, domSkin, pathSkin, scope=SCOPE_CURRENT
 			name = color.attrib.get("name")
 			color = color.attrib.get("value")
 			if name and color:
-				if "," in color:
-					gradients[name] = color
-				else:
-					colors[name] = parseColor(color)
+				colors[name] = parseColor(color)
 				# print("[Skin] DEBUG: Color name='%s', color='%s'." % (name, color))
 			else:
 				raise SkinError("Tag 'color' needs a name and color, got name='%s' and color='%s'" % (name, color))
@@ -1178,13 +1070,7 @@ def loadSingleSkinData(desktop, screenID, domSkin, pathSkin, scope=SCOPE_CURRENT
 				# print("[Skin] DEBUG: WindowStyle borderset name, filename - '%s' '%s'." % (bpName, filename))
 		for color in tag.findall("color"):
 			colorType = color.attrib.get("name")
-			# Windowstyle colors are single-gRGB fields on the C++ side
-			# (eWindowStyleSkinned::setColor), so a gradient spec here resolves
-			# to its first stop instead of raising "must be #aarrggbb".  Skins
-			# like Aglare-FHD-PLI use gradient-like values in these slots
-			# (buttonsc,red,buttonsc,horizontal etc.) and previously caused a
-			# flood of skin errors on load.
-			color = parseColorOrGradient(color.attrib.get("color"))
+			color = parseColor(color.attrib.get("color"))
 			try:
 				style.setColor(eWindowStyleSkinned.__dict__["col" + colorType], color)
 			except Exception:
@@ -1576,26 +1462,21 @@ def readSkin(screen, skin, names, desktop):
 	usedComponents = None
 
 
-def findWidgets(name, _seen=None):
+def findWidgets(name):
 	"""
 	Return a set of all the widgets found in a screen. Panels will be expanded
 	recursively until all referenced widgets are captured. This code only performs
 	a simple scan of the XML and no skin processing is performed.
 	"""
-	if _seen is None:
-		_seen = set()
-	if name in _seen:  # Prevent infinite recursion on self-referential panels.
-		return set()
-	_seen.add(name)
 	widgetSet = set()
 	element, path = domScreens.get(name, (None, None))
 	if element is not None:
 		widgets = element.findall("widget")
 		if widgets is not None:
 			for widget in widgets:
-				widgetName = widget.get("name", None)
-				if widgetName is not None:
-					widgetSet.add(widgetName)
+				name = widget.get("name", None)
+				if name is not None:
+					widgetSet.add(name)
 				source = widget.get("source", None)
 				if source is not None:
 					widgetSet.add(source)
@@ -1606,9 +1487,9 @@ def findWidgets(name, _seen=None):
 		panels = element.findall("panel")
 		if panels is not None:
 			for panel in panels:
-				panelName = panel.get("name", None)
-				if panelName:
-					widgetSet.update(findWidgets(panelName, _seen))
+				name = panel.get("name", None)
+				if name:
+					widgetSet.update(findWidgets(name))
 	return widgetSet
 
 
