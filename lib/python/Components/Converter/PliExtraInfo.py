@@ -219,6 +219,8 @@ class PliExtraInfo(Poll, Converter):
     Crypto fixes ported from OpenViX commits:
       4bd6d69 - reject /tmp/ecm.info that belongs to another service (ECM PID check)
       2a9c832 - don't display encrypted data for an FTA service (sIsCrypted gate)
+      a53015a - match ecm.info to its service by (CAID, ECM PID) pair, FIFO-capped
+                cache, distinguish "missing" from a real 0x0000
     """
 
     # Type constants - crypto
@@ -343,9 +345,12 @@ class PliExtraInfo(Poll, Converter):
         # v2: cached /proc/stb/vmpeg reads; invalidated on program change
         self._vmpeg_cache = None
 
-        # 4bd6d69: last ecm.info data that belonged to a given service ref.
-        # Shared across instances, keyed by service reference.
-        self._own_ecm = ("", None)
+        # a53015a: last ecm.info data that belonged to a given service ref,
+        # keyed by service reference, FIFO-capped. Replaces the single-slot
+        # 4bd6d69 tuple so that 3 simultaneous services (2 tuners + CI)
+        # don't thrash the cache.
+        self._own_ecm = {}
+        self._OWN_ECM_MAX = 8
 
         # Cached colors (avoid dict lookup every poll)
         try:
@@ -367,16 +372,15 @@ class PliExtraInfo(Poll, Converter):
         return _safe_str(value, default)
 
     # ------------------------------------------------------------------
-    # Crypto: OpenViX 4bd6d69 + 2a9c832 ports
+    # Crypto: OpenViX 4bd6d69 + 2a9c832 + a53015a ports
     # ------------------------------------------------------------------
 
-    def _service_ecm_pids(self, info):
-        """The ECM PIDs of the service (what the PMT says), empty if unknown.
-
-        Port of OpenViX 4bd6d69 serviceEcmPids().
-        """
+    def _service_ecm_pairs(self, info):
+        """The (CAID, ECM PID) pairs of the service (what the PMT says),
+        empty if not known. Port of OpenViX a53015a serviceEcmPairs()."""
         try:
-            return {pair[1] for pair in info.getInfoObject(iServiceInformation.sCAIDPIDs)}
+            return {(pair[0], pair[1])
+                    for pair in info.getInfoObject(iServiceInformation.sCAIDPIDs)}
         except Exception:
             return set()
 
@@ -393,32 +397,48 @@ class PliExtraInfo(Poll, Converter):
             return False
         return info.getInfo(iServiceInformation.sIsCrypted) != 1
 
+    def _ecm_number(self, text):
+        """A hex number from ecm.info, None if the softcam did not give it.
+
+        '0' is what GetEcmInfo makes of a missing line; a given 0x0000 is
+        a real number and not a real CAID/ECM PID. Port of a53015a
+        ecmNumber()."""
+        if text in ("", "0"):
+            return None
+        try:
+            return int(text, 16)
+        except (TypeError, ValueError):
+            return None
+
     def _ecm_data_for(self, info):
         """The data of /tmp/ecm.info for the current service.
 
-        Port of OpenViX 4bd6d69 ecmDataFor(). With two services decoding
-        (a recording and the one playing) the softcam writes the file for
-        both in turn, so what is in it is only the current service's if
-        its ECM PID is one of the service's. Otherwise the last data that
-        was the current service's is used, and without any nothing is
-        known. If the ECM PID of either side is not known the file is
-        taken as it is.
+        Port of OpenViX a53015a ecmDataFor() (supersedes the 4bd6d69 port).
+        With two services decoding (a recording and the one playing) the
+        softcam writes the file for both in turn, so what is in it is only
+        the current service's if its CAID and ECM PID are a pair of the
+        service. Only what the file gives is compared. Otherwise the last
+        data that was the current service's is used, and without any
+        nothing is known. If the file gives neither, or the pairs of the
+        service are not known, the file is taken as it is.
         """
         data = self.ecmdata.getEcmData()
         if not info or not pathExists("/tmp/ecm.info"):
             return data
-        pids = self._service_ecm_pids(info)
-        try:
-            ecmpid = int(self._safe_str(data[3], "0"), 16)
-        except (TypeError, ValueError):
-            ecmpid = 0
-        if not pids or not ecmpid:
+        pairs = self._service_ecm_pairs(info)
+        caid = self._ecm_number(self._safe_str(data[1], "0"))
+        pid = self._ecm_number(self._safe_str(data[3], "0"))
+        if not pairs or (caid is None and pid is None):
             return data
         ref = self._safe_str(info.getInfoString(iServiceInformation.sServiceref), "")
-        if ecmpid in pids:
-            self._own_ecm = (ref, data)
+        if any((caid is None or pair[0] == caid) and
+               (pid is None or pair[1] == pid) for pair in pairs):
+            self._own_ecm.pop(ref, None)
+            self._own_ecm[ref] = data
+            if len(self._own_ecm) > self._OWN_ECM_MAX:
+                del self._own_ecm[next(iter(self._own_ecm))]
             return data
-        return self._own_ecm[1] if self._own_ecm[0] == ref else self.NO_ECM_DATA
+        return self._own_ecm.get(ref, self.NO_ECM_DATA)
 
     # ------------------------------------------------------------------
     # IPTV detection & parsing
@@ -624,7 +644,7 @@ class PliExtraInfo(Poll, Converter):
     # ------------------------------------------------------------------
 
     def getCryptoInfo(self, info):
-        """Get crypto information (uses _ecm_data_for -> 4bd6d69 fix)."""
+        """Get crypto information (uses _ecm_data_for -> 4bd6d69+a53015a)."""
         try:
             refstr = info.getInfoString(iServiceInformation.sServiceref)
             if refstr:
@@ -1402,8 +1422,9 @@ class PliExtraInfo(Poll, Converter):
     def getBool(self):
         """Boolean value for crypto indicators and IPTVIsIPTV.
 
-        Crypto path uses _ecm_data_for (4bd6d69) so that the recording
-        service's ecm.info is not mistaken for the playing service's.
+        Crypto path uses _ecm_data_for (4bd6d69 + a53015a) so that the
+        recording service's ecm.info is not mistaken for the playing
+        service's.
         """
         try:
             service = self.source.service
@@ -1432,7 +1453,7 @@ class PliExtraInfo(Poll, Converter):
             if info.getInfo(iServiceInformation.sIsCrypted) != 1:
                 return False
 
-            # 4bd6d69: use _ecm_data_for so cross-service ecm.info doesn't leak
+            # a53015a: use _ecm_data_for so cross-service ecm.info doesn't leak
             data = self._ecm_data_for(info)
             if data is None or len(data) < 2:
                 return False
