@@ -4,6 +4,7 @@ from Components.config import config
 from Components.NimManager import nimmanager
 from skin import parameters
 
+
 class FrontendInfo(Converter):
 	BER = 0
 	SNR = 1
@@ -41,27 +42,33 @@ class FrontendInfo(Converter):
 			self.type = self.LOCK
 
 	def getAGC(self):
-		# 1. Try to get the real AGC from the driver.
+		# self.source.agc is the raw 16-bit tuner value (0-65535), same
+		# scale as snr/ber.  Real hardware AGC is always in the thousands,
+		# so a value <= 255 means either "no AGC support" (0/None) or a
+		# bogus small non-zero value as reported by Si2166D/Si2169D
+		# frontends on the DM920 (seen: 89-124).  In both cases ignore it
+		# and fall through to the SNR-based estimate below, otherwise the
+		# display would show >100 %.
 		agc = self.source.agc
-		
-		# If the driver provides a valid AGC value, use it!
-		if agc is not None and agc > 0:
+		if agc and agc > 255:
 			return agc
-			
-		# 2. If AGC is missing (None or 0), fallback to SNR calculation for DreamBox compatibility
+
+		# No usable hardware AGC: estimate a display value from signal
+		# quality (SNR) so DreamBox users without AGC support still get
+		# a meaningful reading.
 		snr = self.source.snr
-		if snr is None:
+		if not snr:
 			return agc
-			
-		snr_percent = (snr * 100.0) / 65535.0
-		if snr_percent < 35:
-			agc_calc = snr_percent * 1.8
-		elif snr_percent < 70:
-			agc_calc = 63 + ((snr_percent - 35) * 0.8)
+		snrPercent = snr * 100.0 / 65535.0
+		if snrPercent < 35:
+			agcPercent = snrPercent * 1.8
+		elif snrPercent < 70:
+			agcPercent = 63 + ((snrPercent - 35) * 0.8)
 		else:
-			agc_calc = 91 + ((snr_percent - 70) * 0.3)
-			
-		return max(0, min(100, agc_calc))
+			agcPercent = 91 + ((snrPercent - 70) * 0.3)
+		# Return on the same 0-65535 scale as a real hardware AGC so that
+		# getText() and getValue() can treat both cases identically.
+		return round(min(100, agcPercent) * 65535 / 100.0)
 
 	@cached
 	def getText(self):
@@ -69,15 +76,13 @@ class FrontendInfo(Converter):
 		percent = None
 		swapsnr = config.usage.swap_snr_on_osd.value
 		colors = parameters.get("FrontendInfoColors", (0x0000FF00, 0x00FFFF00, 0x007F7F7F))
-		
 		if self.type == self.BER:
 			count = self.source.ber
 			if count is not None:
 				return str(count)
 			return _("N/A")
 		elif self.type == self.AGC:
-			agc = self.getAGC()
-			return _("N/A") if agc is None else "%d %%" % round(agc)
+			percent = self.getAGC()
 		elif (self.type == self.SNR and not swapsnr) or (self.type == self.SNRdB and swapsnr):
 			percent = self.source.snr
 		elif self.type == self.SNR or self.type == self.SNRdB:
@@ -137,6 +142,10 @@ class FrontendInfo(Converter):
 		elif self.type == self.SNR or self.type == self.SNRdB:
 			return self.source.snr_db is not None or self.source.snr is not None
 		elif self.type == self.AGC:
+			# Use getAGC() rather than self.source.agc: on the DM920 the
+			# driver reports a bogus non-zero value which getAGC() rejects;
+			# checking the raw value here would wrongly report AGC as
+			# available.
 			return self.getAGC() is not None
 		elif self.type in (self.STRING, self.USE_TUNERS_STRING):
 			return bool(self.getText())
@@ -149,7 +158,7 @@ class FrontendInfo(Converter):
 		assert self.type != self.LOCK, "the value/range output of FrontendInfo can not be used for lock info"
 		if self.type == self.AGC:
 			agc = self.getAGC()
-			return 0 if agc is None else int(agc * 65535 / 100.0)
+			return 0 if agc is None else int(agc)
 		elif self.type == self.SNR:
 			return self.source.snr or 0
 		elif self.type == self.BER:
