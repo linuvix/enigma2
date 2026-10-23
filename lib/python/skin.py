@@ -217,7 +217,6 @@ def loadSkin(filename, scope=SCOPE_SKIN, desktop=getDesktop(GUI_SKIN_ID), screen
 def reloadSkins():
 	global domScreens, colors, gradients, fonts, menus, menuicons, parameters, screens, setups, switchPixmap
 	domScreens.clear()
-	colors.clear()
 	colors = {
 		"key_back": gRGB(0x00313131),
 		"key_blue": gRGB(0x0018188b),
@@ -227,7 +226,6 @@ def reloadSkins():
 		"key_yellow": gRGB(0x00a08500)
 	}
 	gradients.clear()
-	fonts.clear()
 	fonts = {
 		"Body": BodyFont
 	}
@@ -495,6 +493,8 @@ def parseBoolean(attribute, value):
 
 def parseParameter(s):
 	"""This function is responsible for parsing parameters in the skin, it can parse integers, floats, hex colors, hex integers, named colors, fonts and strings."""
+	if not s:  # Empty value.
+		return s
 	if s[0] == "*":  # String.
 		return s[1:]
 	elif s[0] == "#":  # HEX Color.
@@ -604,7 +604,7 @@ class AttributeParser:
 		return int(value) if self.scaleTuple[0][0] == self.scaleTuple[0][1] else int(int(value) * self.scaleTuple[0][0] / self.scaleTuple[0][1])
 
 	def applyVerticalScale(self, value):
-		return int(value) if self.scaleTuple[0][0] == self.scaleTuple[0][1] else int(int(value) * self.scaleTuple[1][0] / self.scaleTuple[1][1])
+		return int(value) if self.scaleTuple[1][0] == self.scaleTuple[1][1] else int(int(value) * self.scaleTuple[1][0] / self.scaleTuple[1][1])
 
 	def conditional(self, value):
 		pass
@@ -1576,21 +1576,26 @@ def readSkin(screen, skin, names, desktop):
 	usedComponents = None
 
 
-def findWidgets(name):
+def findWidgets(name, _seen=None):
 	"""
 	Return a set of all the widgets found in a screen. Panels will be expanded
 	recursively until all referenced widgets are captured. This code only performs
 	a simple scan of the XML and no skin processing is performed.
 	"""
+	if _seen is None:
+		_seen = set()
+	if name in _seen:  # Prevent infinite recursion on self-referential panels.
+		return set()
+	_seen.add(name)
 	widgetSet = set()
 	element, path = domScreens.get(name, (None, None))
 	if element is not None:
 		widgets = element.findall("widget")
 		if widgets is not None:
 			for widget in widgets:
-				name = widget.get("name", None)
-				if name is not None:
-					widgetSet.add(name)
+				widgetName = widget.get("name", None)
+				if widgetName is not None:
+					widgetSet.add(widgetName)
 				source = widget.get("source", None)
 				if source is not None:
 					widgetSet.add(source)
@@ -1601,9 +1606,9 @@ def findWidgets(name):
 		panels = element.findall("panel")
 		if panels is not None:
 			for panel in panels:
-				name = panel.get("name", None)
-				if name:
-					widgetSet.update(findWidgets(name))
+				panelName = panel.get("name", None)
+				if panelName:
+					widgetSet.update(findWidgets(panelName, _seen))
 	return widgetSet
 
 
