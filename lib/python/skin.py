@@ -326,18 +326,21 @@ def parseFont(s, scale=((1, 1), (1, 1))):
 
 def parseColor(s):
 	if s[0] != "#":
-		try:
+		if s in colors:
 			return colors[s]
-		except KeyError:
-			raise SkinError("Color '%s' must be #aarrggbb or valid named color" % s)
+		if "," in s:
+			return parseGradient(s)[0]
+		raise SkinError("Color '%s' must be #aarrggbb or valid named color" % s)
 	return gRGB(int(s[1:], 0x10))
 
 
 def parseGradient(value):
-	def validColor(v):
+	def resolveColor(v):
 		if v and v[0] == "#" and len(v) in (9, 7):
-			return True
-		return v in colors
+			return gRGB(int(v[1:], 0x10))
+		if v in colors:
+			return colors[v]
+		return gRGB(0x00000000)
 
 	value = gradients.get(value, value)
 	data = [x.strip() for x in value.split(",")]
@@ -345,10 +348,16 @@ def parseGradient(value):
 
 	consumed = 0
 	for i, color in enumerate(data):
-		if i > 2 or not validColor(color):
+		if i > 2:
 			break
-		gradientColors[i] = parseColor(color)
-		consumed = i + 1
+		if color and color[0] == "#" and len(color) in (9, 7):
+			gradientColors[i] = resolveColor(color)
+			consumed = i + 1
+		elif color in colors:
+			gradientColors[i] = resolveColor(color)
+			consumed = i + 1
+		else:
+			break
 
 	if consumed < 2:
 		raise SkinError("Gradient '%s' must be 'startColor[,centerColor],endColor,direction[,alphaBlend]'" % value)
@@ -606,29 +615,34 @@ class AttributeParser:
 			print("[Skin] Error: Invalid orientation '%s'!  Must be one of 'orVertical', 'orTopToBottom', 'orBottomToTop', 'orHorizontal', 'orLeftToRight' or 'orRightToLeft'." % value)
 
 	def valign(self, value):
-		try:
-			self.guiObject.setVAlign({
-				"top": self.guiObject.alignTop,
-				"center": self.guiObject.alignCenter,
-				"bottom": self.guiObject.alignBottom
-			}[value])
-		except KeyError:
-			print("[Skin] Error: Invalid valign '%s'!  Must be one of 'top', 'center' or 'bottom'." % value)
+		if hasattr(self.guiObject, "setVAlign"):
+			align_map = {"top": 0, "center": 1, "bottom": 2}
+			if value in align_map:
+				try:
+					self.guiObject.setVAlign(align_map[value])
+					return
+				except Exception:
+					pass
+		print("[Skin] Attribute 'valign' with value '%s' not supported by %s" % (value, self.guiObject.__class__.__name__))
 
 	def halign(self, value):
-		try:
-			self.guiObject.setHAlign({
-				"left": self.guiObject.alignLeft,
-				"center": self.guiObject.alignCenter,
-				"right": self.guiObject.alignRight,
-				"block": self.guiObject.alignBlock
-			}[value])
-		except KeyError:
-			print("[Skin] Error: Invalid halign '%s'!  Must be one of 'left', 'center', 'right' or 'block'." % value)
+		if hasattr(self.guiObject, "setHAlign"):
+			align_map = {"left": 0, "center": 1, "right": 2, "block": 3}
+			if value in align_map:
+				try:
+					self.guiObject.setHAlign(align_map[value])
+					return
+				except Exception:
+					pass
+		print("[Skin] Attribute 'halign' with value '%s' not supported by %s" % (value, self.guiObject.__class__.__name__))
 
 	def textOffset(self, value):
-		x, y = value.split(",")
-		self.guiObject.setTextOffset(ePoint(int(x) * self.scaleTuple[0][0] // self.scaleTuple[0][1], int(y) * self.scaleTuple[1][0] // self.scaleTuple[1][1]))
+		if hasattr(self.guiObject, "setTextOffset"):
+			x, y = value.split(",")
+			self.guiObject.setTextOffset(ePoint(int(x), int(y)))
+
+	def render(self, value):
+		pass
 
 	def flags(self, value):
 		flags = value.split(",")
@@ -717,10 +731,16 @@ class AttributeParser:
 		self.guiObject.setScrollbarWidth(self.applyHorizontalScale(parseScale(value)))
 
 	def scrollbarSliderBorderColor(self, value):
-		self.guiObject.setSliderBorderColor(parseColor(value))
+		if hasattr(self.guiObject, "setScrollbarBorderColor"):
+			self.guiObject.setScrollbarBorderColor(parseColor(value))
+		else:
+			self.guiObject.setSliderBorderColor(parseColor(value))
 
 	def scrollbarSliderForegroundColor(self, value):
-		self.guiObject.setSliderForegroundColor(parseColor(value))
+		if hasattr(self.guiObject, "setScrollbarForegroundColor"):
+			self.guiObject.setScrollbarForegroundColor(parseColor(value))
+		else:
+			self.guiObject.setSliderForegroundColor(parseColor(value))
 
 	def scrollbarMode(self, value):
 		try:
