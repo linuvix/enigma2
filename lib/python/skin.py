@@ -658,6 +658,12 @@ class AttributeParser:
 		start, mid, end, direction, blend = parseGradient(value)
 		self.guiObject.setForegroundGradient(start, mid, end, direction, blend)
 
+	def windowStyleColorGradient(self, value):
+		what, spec = value.split(":", 1)
+		what = what.strip()
+		start, mid, end, direction, blend = parseGradient(spec.strip())
+		self.guiObject.setGradient(getattr(self.guiObject, "col" + what), [start, mid, end], direction, blend)
+
 	def backgroundColorSelected(self, value):
 		self.guiObject.setBackgroundColorSelected(parseColor(value))
 
@@ -1005,6 +1011,17 @@ def loadSingleSkinData(desktop, screenID, domSkin, pathSkin, scope=SCOPE_CURRENT
 				style.setColor(eWindowStyleSkinned.__dict__["col" + colorType], flatColor)
 			except Exception:
 				raise SkinError("Unknown color type '%s'" % colorType)
+		for cg in tag.findall("colorgradient"):
+			cgType = cg.attrib.get("name")
+			cgValue = cg.attrib.get("value")
+			if cgType and cgValue:
+				start, mid, end, direction, blend = parseGradient(cgValue)
+				try:
+					style.setGradient(eWindowStyleSkinned.__dict__["col" + cgType], [start, mid, end], direction, blend)
+				except Exception as err:
+					print("[Skin] Error: windowstyle colorgradient '%s' failed: %s" % (cgType, err))
+			else:
+				raise SkinError("Tag 'colorgradient' needs name and value, got name='%s' and value='%s'" % (cgType, cgValue))
 		x = eWindowStyleManager.getInstance()
 		x.setStyle(scrnID, style)
 	for tag in domSkin.findall("margin"):
