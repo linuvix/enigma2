@@ -96,6 +96,21 @@ void eListbox::setContent(iListboxContent *content)
 	m_content = content;
 	if (content)
 		m_content->setListbox(this);
+	// Re-apply skin values, because setListbox() just propagated the content's
+	// internal defaults (typically 25x25/orVertical) back onto us.
+	if (content)
+	{
+		if (m_itemwidth != 25 || m_itemheight != 25)
+		{
+			m_content->setItemWidth(m_itemwidth);
+			m_content->setItemHeight(m_itemheight);
+		}
+		if (m_orientation != orVertical)
+		{
+			m_content->setOrientation(m_orientation);
+		}
+		recalcSize();
+	}
 	entryReset();
 }
 

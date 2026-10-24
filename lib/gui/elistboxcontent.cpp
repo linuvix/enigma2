@@ -224,7 +224,15 @@ void eListboxPythonStringContent::paint(gPainter &painter, eWindowStyle &style, 
 	if (!fnt) fnt = new gFont("Regular", 20);
 	bool isverticallb = m_listbox && m_listbox->getOrientation() == 1;
 	/* if we have no transparent background */
-	if (!local_style || !local_style->m_transparent_background)
+	// If the skin sets a background color but the widget was marked
+	// transparent (e.g. overlay grids over live video), we still want
+	// to paint the background — otherwise only the selected item
+	// renders and the rest of the grid is invisible.
+	bool forceBg = local_style && (
+		local_style->m_background_color_set ||
+		local_style->m_background_color_selected_set
+	);
+	if (!local_style || !local_style->m_transparent_background || forceBg)
 	{
 			/* blit background picture, if available (otherwise, clear only) */
 		if (local_style && local_style->m_background && cursorValid)

@@ -56,6 +56,11 @@ protected:
 	virtual int getMaxItemTextWidth() { return 1; }
 	virtual int getListSize() { return 0; }
 
+	// NEW: Virtual setters so eListbox can push skin values down to the content
+	virtual void setItemHeight(int height) {}
+	virtual void setItemWidth(int width) {}
+	virtual void setOrientation(int orientation) {}
+
 	eListbox *m_listbox;
 #endif
 };
