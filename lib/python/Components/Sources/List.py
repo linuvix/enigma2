@@ -169,3 +169,40 @@ to generate HTML."""
 
 	def getSelectedIndex(self):
 		return self.getIndex()
+
+	# --- OpenATV parity additions ---
+
+	def enableAutoNavigation(self, value):
+		try:
+			instance = self.master.master.instance
+			instance.enableAutoNavigation(value)
+		except AttributeError:
+			return
+
+	def show(self):
+		try:
+			instance = self.master.master.instance
+			instance.show()
+		except AttributeError:
+			return
+
+	def hide(self):
+		try:
+			instance = self.master.master.instance
+			instance.hide()
+		except AttributeError:
+			return
+
+	def goLeft(self):
+		try:
+			instance = self.master.master.instance
+			instance.goLeft()
+		except AttributeError:
+			return
+
+	def goRight(self):
+		try:
+			instance = self.master.master.instance
+			instance.goRight()
+		except AttributeError:
+			return
