@@ -503,7 +503,7 @@ class OSCamInfo(Screen, OSCamGlobals):
 			self["camname"].setText("%s" % camname)
 			self["virtuell"].setText("Virtual: %s" % sysinfo.get("%s_vmsize" % tag, na))
 			self["resident"].setText("Resident: %s" % sysinfo.get("%s_rsssize" % tag, na))
-			self["outlist"].updateList(outlist)
+			self["outlist"].list = outlist
 			self.displayLog()
 		else:
 			self["buildinfos"].setText(url)
@@ -812,7 +812,7 @@ class OSCamEntitlements(Screen, OSCamGlobals):
 			else:
 				self["entitleslist"].style = "default"
 				self.show_dheaders()
-		self["entitleslist"].updateList(entitleslist)
+		self["entitleslist"].list = entitleslist
 		self.setTitle(_("%sInfo: %s Entitlements for '%s'") % (camname, len(entitleslist), self.readeruser))
 		self.entitleslist = entitleslist
 		self.showHideBlue()
