@@ -856,7 +856,7 @@ static void clearRegionHelper(gPainter &painter, eListboxStyle *local_style, con
 			}
 			return;
 		}
-		else if (local_style->m_transparent_background)
+		else if (local_style->m_transparent_background && !local_style->m_background_color_set)
 			return;
 	}
 	if (clear)

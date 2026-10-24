@@ -1315,12 +1315,14 @@ void eListbox::setBackgroundColor(const gRGB &col)
 {
 	m_style.m_background_color = col;
 	m_style.m_background_color_set = 1;
+	setTransparent(0);
 }
 
 void eListbox::setBackgroundColorSelected(gRGB &col)
 {
 	m_style.m_background_color_selected = col;
 	m_style.m_background_color_selected_set = 1;
+	setTransparent(0);
 }
 
 void eListbox::setForegroundColor(gRGB &col)
