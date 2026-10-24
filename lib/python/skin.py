@@ -628,6 +628,19 @@ class AttributeParser:
 		except KeyError:
 			print("[Skin] Error: Invalid orientation '%s'!  Must be one of 'orVertical', 'orTopToBottom', 'orBottomToTop', 'orHorizontal', 'orLeftToRight' or 'orRightToLeft'." % value)
 
+	def listOrientation(self, value):  # Used by eListbox.
+		try:
+			self.guiObject.setOrientation({
+				"orVertical": self.guiObject.orVertical,
+				"vertical": self.guiObject.orVertical,  # compatibility with openatv
+				"orHorizontal": self.guiObject.orHorizontal,
+				"horizontal": self.guiObject.orHorizontal,  # compatibility with openatv
+				"orGrid": self.guiObject.orGrid,
+				"grid": self.guiObject.orGrid,  # compatibility with openatv
+			}[value])
+		except KeyError:
+			print("[Skin] Error: Invalid listOrientation '%s'!  Must be one of 'orVertical', 'vertical', 'orHorizontal', 'horizontal', 'orGrid' or 'grid'." % value)
+
 	def valign(self, value):
 		if hasattr(self.guiObject, "setVAlign"):
 			align_map = {"top": 0, "center": 1, "bottom": 2}
