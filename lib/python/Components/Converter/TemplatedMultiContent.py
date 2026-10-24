@@ -35,7 +35,14 @@ class TemplatedMultiContent(StringList):
 		self.active_style = None
 		self.template = eval(args, {}, loc)
 		self.scale = None
-		self.orientations = {"orHorizontal": eListbox.orHorizontal, "orVertical": eListbox.orVertical}
+		self.orientations = {
+			"orHorizontal": eListbox.orHorizontal,
+			"horizontal": eListbox.orHorizontal,
+			"orVertical": eListbox.orVertical,
+			"vertical": eListbox.orVertical,
+			"orGrid": eListbox.orGrid,
+			"grid": eListbox.orGrid,
+		}
 
 		# --- Lenient validation (OpenATV style) instead of hard asserts ---
 		if "fonts" not in self.template:
@@ -109,10 +116,20 @@ class TemplatedMultiContent(StringList):
 			orientation = self.template.get("orientation")
 			selectionEnabled = self.template.get("selectionEnabled", True)
 			scrollbarMode = self.template.get("scrollbarMode", "showOnDemand")
+			# Support OpenATV-style itemSize tuple
+			if "itemSize" in self.template:
+				sz = self.template["itemSize"]
+				if isinstance(sz, (tuple, list)):
+					itemwidth, itemheight = sz[0], sz[1]
+				else:
+					itemwidth = itemheight = sz
 			if templates and style and style in templates:  # If we have a custom style defined in the source, and different templates in the skin, look it up
-				# "template" and "itemheight" are mandatory in a template. selectionEnabled, scrollbarMode, itemwidth, and orientation are optional.
+				# "template" and "itemheight"/"itemSize" are mandatory. selectionEnabled, scrollbarMode, itemwidth, and orientation are optional.
 				template = templates[style][1]
-				itemheight = templates[style][0]
+				if isinstance(templates[style][0], (tuple, list)):
+					itemwidth, itemheight = templates[style][0][0], templates[style][0][1]
+				else:
+					itemheight = templates[style][0]
 				if len(templates[style]) > 2 and templates[style][2] is not None:
 					selectionEnabled = templates[style][2]
 				if len(templates[style]) > 3 and templates[style][3] is not None:
