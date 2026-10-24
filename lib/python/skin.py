@@ -328,8 +328,6 @@ def parseColor(s):
 	if s[0] != "#":
 		if s in colors:
 			return colors[s]
-		if "," in s:
-			return parseGradient(s)[0]
 		raise SkinError("Color '%s' must be #aarrggbb or valid named color" % s)
 	return gRGB(int(s[1:], 0x10))
 
@@ -337,30 +335,31 @@ def parseColor(s):
 def parseGradient(value):
 	def resolveColor(v):
 		if v and v[0] == "#" and len(v) in (9, 7):
-			return gRGB(int(v[1:], 0x10))
+			try:
+				return gRGB(int(v[1:], 0x10))
+			except Exception:
+				return gRGB(0x00000000)
 		if v in colors:
 			return colors[v]
 		return gRGB(0x00000000)
 
 	value = gradients.get(value, value)
 	data = [x.strip() for x in value.split(",")]
-	gradientColors = [gRGB(0x00000000), gRGB(0x00FFFFFF), gRGB(0x00FFFFFF)]
 
+	gradientColors = [gRGB(0x00000000), gRGB(0x00000000), gRGB(0x00000000)]
 	consumed = 0
+
 	for i, color in enumerate(data):
 		if i > 2:
 			break
-		if color and color[0] == "#" and len(color) in (9, 7):
-			gradientColors[i] = resolveColor(color)
-			consumed = i + 1
-		elif color in colors:
+		if (color and color[0] == "#" and len(color) in (9, 7)) or color in colors:
 			gradientColors[i] = resolveColor(color)
 			consumed = i + 1
 		else:
 			break
 
 	if consumed < 2:
-		raise SkinError("Gradient '%s' must be 'startColor[,centerColor],endColor,direction[,alphaBlend]'" % value)
+		return (gRGB(0x00000000), gRGB(0x00000000), gRGB(0x00000000), eWidget.GRADIENT_VERTICAL, 0)
 
 	if consumed == 2:
 		gradientColors[2] = gradientColors[1]
@@ -368,11 +367,13 @@ def parseGradient(value):
 	remaining = data[consumed:]
 	direction = eWidget.GRADIENT_VERTICAL
 	alphaBlend = 0
+
 	if remaining:
 		direction = {
 			"horizontal": eWidget.GRADIENT_HORIZONTAL,
 			"vertical": eWidget.GRADIENT_VERTICAL
 		}.get(remaining[0].lower(), eWidget.GRADIENT_VERTICAL)
+
 		if len(remaining) > 1:
 			alphaBlend = 1 if parseBoolean("alphablend", remaining[1]) else 0
 
