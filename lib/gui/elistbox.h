@@ -131,6 +131,10 @@ public:
 	void setContent(iListboxContent *content);
 
 	void allowNativeKeys(bool allow);
+	void enableAutoNavigation(bool allow) { allowNativeKeys(allow); }
+
+	void goLeft() { moveSelection(moveLeft); }
+	void goRight() { moveSelection(moveRight); }
 
 /*	enum Movement {
 		moveUp,
@@ -165,7 +169,9 @@ public:
 		nextPageItem,
 		nextItem,
 		prevPage,
-		nextPage
+		nextPage,
+		moveLeft,
+		moveRight
 	};
 
 	void setItemHeight(int h);

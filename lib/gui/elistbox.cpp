@@ -45,7 +45,12 @@ eListbox::~eListbox()
 
 void eListbox::setOrientation(int orientation)
 {
-	m_orientation = orientation;
+	if (m_orientation != orientation)
+	{
+		m_orientation = orientation;
+		if (m_content)
+			recalcSize();
+	}
 }
 
 void eListbox::setScrollbarMode(int mode)
@@ -176,6 +181,13 @@ void eListbox::moveSelection(long dir)
 				r_dir = nextItem;
 				break;
 		}
+	}
+
+	// Map moveLeft/moveRight per orientation
+	if (dir == moveLeft) {
+		r_dir = (m_orientation == orVertical) ? prevPage : prevItem;
+	} else if (dir == moveRight) {
+		r_dir = (m_orientation == orVertical) ? nextPage : nextItem;
 	}
 
 	// Map universal actions to the corresponding action for Horizontal and vertical eListbox
