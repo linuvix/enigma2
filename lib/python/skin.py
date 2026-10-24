@@ -424,10 +424,23 @@ def loadPixmap(path, desktop, width=0, height=0):
 		path = path[:option]
 	if not rc_model.rcIsDefault() and basename(path) in ("rc.png", "rc0.png", "rc1.png", "rc2.png", "oldrc.png"):
 		path = rc_model.getRcImg()
+
 	pixmap = LoadPixmap(path, desktop, None, width, height)
-	if pixmap is None:
-		raise SkinError("Pixmap file '%s' not found" % path)
-	return pixmap
+	if pixmap is not None:
+		return pixmap
+
+	if not path.startswith("/"):
+		for scope in (SCOPE_CURRENT_SKIN, SCOPE_SKIN, SCOPE_CONFIG, SCOPE_CURRENT_LCDSKIN):
+			try:
+				resolved = resolveFilename(scope, path)
+			except Exception:
+				continue
+			if isfile(resolved):
+				pixmap = LoadPixmap(resolved, desktop, None, width, height)
+				if pixmap is not None:
+					return pixmap
+
+	raise SkinError("Pixmap file '%s' not found" % path)
 
 
 def collectAttributes(skinAttributes, node, context, skinPath=None, ignore=(), filenames=frozenset(("pixmap", "pointer", "seek_pointer", "backgroundPixmap", "selectionPixmap", "selectionPixmapLarge", "sliderPixmap", "scrollbarSliderPicture", "scrollbarbackgroundPixmap", "scrollbarBackgroundPicture"))):
@@ -640,6 +653,11 @@ class AttributeParser:
 		if hasattr(self.guiObject, "setTextOffset"):
 			x, y = value.split(",")
 			self.guiObject.setTextOffset(ePoint(int(x), int(y)))
+
+	def padding(self, value):
+		if hasattr(self.guiObject, "setPadding"):
+			l, t, r, b = [int(x.strip()) for x in value.split(",")]
+			self.guiObject.setPadding(eRect(l, t, r, b))
 
 	def render(self, value):
 		pass
