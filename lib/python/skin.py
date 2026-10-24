@@ -673,7 +673,18 @@ class AttributeParser:
 				print("[Skin] Error: Invalid flag '%s'!" % f)
 
 	def backgroundColor(self, value):
-		self.guiObject.setBackgroundColor(parseColor(value))
+		if "," in value or value in gradients:
+			start, mid, end, direction, blend = parseGradient(value)
+			self.guiObject.setBackgroundGradient(start, mid, end, direction, blend)
+		else:
+			self.guiObject.setBackgroundColor(parseColor(value))
+
+	def foregroundColor(self, value):
+		if "," in value or value in gradients:
+			start, mid, end, direction, blend = parseGradient(value)
+			self.guiObject.setForegroundGradient(start, mid, end, direction, blend)
+		else:
+			self.guiObject.setForegroundColor(parseColor(value))
 
 	def backgroundColorGradient(self, value):
 		start, mid, end, direction, blend = parseGradient(value)
@@ -699,9 +710,6 @@ class AttributeParser:
 
 	def backgroundColorSelected(self, value):
 		self.guiObject.setBackgroundColorSelected(parseColor(value))
-
-	def foregroundColor(self, value):
-		self.guiObject.setForegroundColor(parseColor(value))
 
 	def foregroundColorSelected(self, value):
 		self.guiObject.setForegroundColorSelected(parseColor(value))
