@@ -1988,7 +1988,13 @@ void eListboxPythonMultiContent::entryRemoved(int idx)
 
 void eListboxPythonMultiContent::setTemplate(ePyObject tmplate)
 {
+	// Treat None as "no template" so callers can clear it explicitly.
+	if (tmplate == Py_None)
+		tmplate = (PyObject *)nullptr;
+	// Incref BEFORE decref'ing the old value: setTemplate(m_template) is a
+	// valid call (re-assigning the same object) and the old ordering would
+	// free the object here and then incref/assign a dangling pointer.
+	Py_XINCREF(tmplate);
 	Py_XDECREF(m_template);
 	m_template = tmplate;
-	Py_XINCREF(m_template);
 }
