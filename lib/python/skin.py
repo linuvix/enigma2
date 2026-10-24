@@ -788,10 +788,11 @@ class AttributeParser:
 				"showOnDemand": self.guiObject.showOnDemand,
 				"showAlways": self.guiObject.showAlways,
 				"showNever": self.guiObject.showNever,
-				"showLeft": self.guiObject.showLeft
+				"showLeft": self.guiObject.showLeft,
+				"showTop": self.guiObject.showTop
 			}[value])
 		except KeyError:
-			print("[Skin] Error: Invalid scrollbarMode '%s'!  Must be one of 'showOnDemand', 'showAlways', 'showNever' or 'showLeft'." % value)
+			print("[Skin] Error: Invalid scrollbarMode '%s'!  Must be one of 'showOnDemand', 'showAlways', 'showNever', 'showLeft' or 'showTop'." % value)
 
 	def enableWrapAround(self, value):
 		self.guiObject.setWrapAround(parseBoolean("enablewraparound", value))
