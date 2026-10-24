@@ -5,11 +5,11 @@ ePyObject ePythonConfigQuery::m_queryFunc;
 
 void ePythonConfigQuery::setQueryFunc(ePyObject queryFunc)
 {
+	if (queryFunc)
+		Py_INCREF(queryFunc);
 	if (m_queryFunc)
 		Py_DECREF(m_queryFunc);
 	m_queryFunc = queryFunc;
-	if (m_queryFunc)
-		Py_INCREF(m_queryFunc);
 }
 
 RESULT ePythonConfigQuery::getConfigValue(const char *key, std::string &value)

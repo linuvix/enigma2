@@ -56,6 +56,7 @@ is usually caused by not marking PSignals as immutable.
 #include <lib/gdi/grc.h>
 #include <lib/gdi/gmaindc.h>
 #include <lib/gui/ewidget.h>
+#include <lib/gui/erectangle.h>
 #include <lib/gui/elabel.h>
 #include <lib/gui/einput.h>
 #include <lib/gui/einputstring.h>
@@ -156,6 +157,7 @@ typedef long time_t;
 %include "typemaps.i"
 %include "std_string.i"
 %include "stdint.i"
+%include "std_vector.i"        /* ADDED: enables Python list -> std::vector<> conversions */
 %include <lib/python/swig.h>
 %include <lib/base/object.h>
 %include <lib/base/eenv.h>
@@ -212,6 +214,7 @@ typedef long time_t;
 %include <lib/gdi/fb.h>
 %include <lib/gdi/font.h>
 %include <lib/gdi/gpixmap.h>
+%include <lib/gdi/grc.h>        /* ADDED: makes gRGB (and friends) SWIG-visible in the body, not only in %{ %} */
 %include <lib/gdi/gmaindc.h>
 %include <lib/gdi/epoint.h>
 
@@ -228,6 +231,7 @@ typedef long time_t;
 %include <lib/gdi/erect.h>
 %include <lib/gdi/esize.h>
 %include <lib/gui/ewidget.h>
+%include <lib/gui/erectangle.h>
 %include <lib/gui/elabel.h>
 %include <lib/gui/einput.h>
 %include <lib/gui/einputstring.h>
@@ -339,6 +343,10 @@ public:
 %typemap(out) PSignal2VII {
 	$1 = $input->get();
 }
+
+/* ADDED: instantiate std::vector<gRGB> so skin.py can pass [start, mid, end] to setGradient(...)
+   (eWindowStyleSkinned::setGradient, eWidget::setBackgroundGradient, eSlider::set*Gradient, ...). */
+%template(vector_gRGB) std::vector<gRGB>;
 
 %{
 RESULT SwigFromPython(ePtr<gPixmap> &result, PyObject *obj)
