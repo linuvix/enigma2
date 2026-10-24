@@ -331,6 +331,15 @@ class SecondInfoBar(Screen):
 	def __init__(self, session, skinName):
 		Screen.__init__(self, session)
 		self.skinName = skinName
+		self["key_red"] = StaticText()
+		self["key_green"] = StaticText()
+		self["key_yellow"] = StaticText()
+		self["key_blue"] = StaticText()
+		self.onShow.append(self.__onShow)
+
+	def __onShow(self):
+		self["key_red"].setText(_("Similar"))
+		self["key_blue"].setText(_("Extensions"))
 
 
 class InfoBarShowHide(InfoBarScreenSaver):

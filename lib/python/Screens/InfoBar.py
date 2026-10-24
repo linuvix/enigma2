@@ -60,6 +60,10 @@ class InfoBar(InfoBarBase, InfoBarShowHide,
 				"toggleTvRadio": (self.toggleTvRadio, _("Toggle the tv and the radio player...")),
 			}, prio=2)
 
+		self["key_red"] = Label()
+		self["key_green"] = Label()
+		self["key_yellow"] = Label()
+		self["key_blue"] = Label()
 		self.radioTV = 0
 		self.allowPiP = True
 
@@ -192,6 +196,9 @@ class MoviePlayer(InfoBarBase, InfoBarShowHide, InfoBarMenu, InfoBarSeek, InfoBa
 				"extensions": (self.showExtensionSelection, _("Show extensions...")),
 			}, 1) # lower priority
 
+		self["key_green"] = Label()
+		self["key_yellow"] = Label()
+		self["key_blue"] = Label()
 		self["state"] = Label()
 		self["speed"] = Label()
 		self["statusicon"] = MultiPixmap()
