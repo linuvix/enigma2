@@ -574,6 +574,11 @@ class AttributeParser:
 		self.guiObject.setScrollbarBackgroundPicture(loadPixmap(value, self.desktop))
 
 	def alphatest(self, value):
+		# 'alphatest' only makes sense on widgets that actually handle it (e.g.
+		# ePixmap). Skins sometimes set it on containers by mistake - skip
+		# quietly instead of printing a spurious error for every such widget.
+		if not hasattr(self.guiObject, "setAlphatest"):
+			return
 		try:
 			self.guiObject.setAlphatest({
 				"on": BT_ALPHATEST,
@@ -694,14 +699,25 @@ class AttributeParser:
 	def backgroundColor(self, value):
 		if "," in value or value in gradients:
 			start, mid, end, direction, blend = parseGradient(value)
-			self.guiObject.setBackgroundGradient(start, mid, end, direction, blend)
+			# Not every widget supports gradients (e.g. eLabel only has a flat
+			# background colour). Fall back to the gradient's start colour so
+			# skin authors get a sensible approximation instead of an error
+			# and a label with no background at all.
+			if hasattr(self.guiObject, "setBackgroundGradient"):
+				self.guiObject.setBackgroundGradient(start, mid, end, direction, blend)
+			else:
+				self.guiObject.setBackgroundColor(start)
 		else:
 			self.guiObject.setBackgroundColor(parseColor(value))
 
 	def foregroundColor(self, value):
 		if "," in value or value in gradients:
 			start, mid, end, direction, blend = parseGradient(value)
-			self.guiObject.setForegroundGradient(start, mid, end, direction, blend)
+			# See backgroundColor() above - same reasoning.
+			if hasattr(self.guiObject, "setForegroundGradient"):
+				self.guiObject.setForegroundGradient(start, mid, end, direction, blend)
+			else:
+				self.guiObject.setForegroundColor(start)
 		else:
 			self.guiObject.setForegroundColor(parseColor(value))
 
