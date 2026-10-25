@@ -259,13 +259,12 @@ gSurface::~gSurface()
 	// that's ever been shown once leaks its accel-backed memory forever
 	// instead of returning it when scrolled away and destroyed.
 #ifdef HAVE_EGL
-	// Diagnostic only: gTextureManager's own logs (+texture/-texture) never
-	// show a single deletion across an entire long-running session despite
-	// plenty of surfaces provably going out of scope Python-side - this
-	// traces whether that's because ~gSurface() itself isn't running for
-	// them (something else is still keeping the gPixmap referenced) or
-	// because it runs but gl_texture_id is unexpectedly 0 here.
+	// Diagnostic only - compile with -DGPIXMAP_TEXTURE_LIFECYCLE to enable.
+	// Kept (not deleted) so future texture-leak hunts don't have to re-add it;
+	// normal builds stay quiet because this fires for every picon/icon/surface.
+#ifdef GPIXMAP_TEXTURE_LIFECYCLE
 	eDebug("[gSurface] dtor surface=%p gl_texture_id=%u %dx%d bpp=%d", this, gl_texture_id, x, y, bpp);
+#endif
 	if (gl_texture_id)
 		egl_queue_texture_deletion(gl_texture_id);
 #endif
@@ -1720,7 +1719,12 @@ void gPixmap::blitRounded8Bit(const gPixmap &src, const eRect &pos, const eRect 
 
 		srcptr += (bottomRect.left() - pos.left()) + (bottomRect.top() - pos.top()) * src.surface->stride;
 		dstptr += bottomRect.left() + (bottomRect.top()) * surface->stride / 4;
-		for (int y = (bottomRect.top() - pos.top()); y < (bottomRect.top() - pos.top() + bottom); y++)
+		// Iterate bottomRect's actual (clip-intersected) row range - the old form
+		// indexed relative to `pos` and over-iterated when bottomRect was clipped
+		// (e.g. a rounded pixmap partially off-screen at the bottom), writing past
+		// the destination surface's last scanline. Matches the middle/top blocks
+		// above and blitRounded32Bit's bottom block.
+		for (int y = bottomRect.top(); y < bottomRect.bottom(); y++)
 		{
 			if (flag & blitAlphaTest)
 			{

@@ -3234,6 +3234,18 @@ void gEGLDC::captureBackgroundIntoPixmap(const eRect& rect) {
 		uint8_t* dst_row = dst_base + (size_t)(top + row) * dst_stride + (size_t)left * 4;
 		memcpy(dst_row, src_row, row_bytes);
 	}
+	// Force the captured background to be fully opaque. The DM920's GPU
+	// can return an alpha value from glReadPixels that doesn't match the
+	// solid black OSD, and compositeTextOverlay(..., false) later writes
+	// that alpha straight back to the render target - leaving a visible
+	// "transparent square" (a hole through to the video plane) around
+	// where the spinner was. Since this is meant to be an exact copy of
+	// what was on screen, override alpha to 0xFF.
+	for (int row = 0; row < h; ++row) {
+		uint8_t* dst_row = dst_base + (size_t)(top + row) * dst_stride + (size_t)left * 4;
+		for (int x = 0; x < w; ++x)
+			dst_row[x * 4 + 3] = 0xFF;
+	}
 	if (!gles::needsRBSwap) {
 		for (int row = 0; row < h; ++row) {
 			uint8_t* dst_row = dst_base + (size_t)(top + row) * dst_stride + (size_t)left * 4;
