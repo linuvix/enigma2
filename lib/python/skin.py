@@ -334,6 +334,7 @@ def parseColor(s):
 
 def parseGradient(value):
 	def resolveColor(v):
+		# Accept #aarrggbb, #rrggbb, or a name from the colors dict.
 		if v and v[0] == "#" and len(v) in (9, 7):
 			try:
 				return gRGB(int(v[1:], 0x10))
@@ -341,8 +342,28 @@ def parseGradient(value):
 				return gRGB(0x00000000)
 		if v in colors:
 			return colors[v]
+		# If the token is itself a gradient name, take its start colour.
+		if v in gradients:
+			first = gradients[v].split(",")[0].strip()
+			if first and first[0] == "#" and len(first) in (9, 7):
+				try:
+					return gRGB(int(first[1:], 0x10))
+				except Exception:
+					return gRGB(0x00000000)
+			if first in colors:
+				return colors[first]
 		return gRGB(0x00000000)
 
+	def isColorToken(v):
+		if v and v[0] == "#" and len(v) in (9, 7):
+			return True
+		if v in colors:
+			return True
+		if v in gradients:
+			return True
+		return False
+
+	# If the whole value is a gradient name, take that definition.
 	value = gradients.get(value, value)
 	data = [x.strip() for x in value.split(",")]
 
@@ -352,7 +373,7 @@ def parseGradient(value):
 	for i, color in enumerate(data):
 		if i > 2:
 			break
-		if (color and color[0] == "#" and len(color) in (9, 7)) or color in colors:
+		if isColorToken(color):
 			gradientColors[i] = resolveColor(color)
 			consumed = i + 1
 		else:
@@ -702,9 +723,13 @@ class AttributeParser:
 	def backgroundColor(self, value):
 		if "," in value or value in gradients:
 			start, mid, end, direction, blend = parseGradient(value)
+			# If the parsed start colour is fully transparent, don't override
+			# whatever the widget/skin already set - that's clearly a bad value.
+			if start.argb() & 0xFF000000 == 0:   # alpha == 0
+				return
 			# eLabel inherits setBackgroundGradient() from eWidget but does not
-			# render a gradient - it is a flat label.  Use the flat start
-			# colour so the skin's intended look is preserved.
+			# render a gradient - it is a flat label.  Use the flat start colour
+			# so the skin's intended look is preserved.
 			if isinstance(self.guiObject, eLabel) or not hasattr(self.guiObject, "setBackgroundGradient"):
 				self.guiObject.setBackgroundColor(start)
 			else:
@@ -715,6 +740,10 @@ class AttributeParser:
 	def foregroundColor(self, value):
 		if "," in value or value in gradients:
 			start, mid, end, direction, blend = parseGradient(value)
+			# If the parsed start colour is fully transparent, don't override
+			# whatever the widget/skin already set - that's clearly a bad value.
+			if start.argb() & 0xFF000000 == 0:
+				return
 			if isinstance(self.guiObject, eLabel) or not hasattr(self.guiObject, "setForegroundGradient"):
 				self.guiObject.setForegroundColor(start)
 			else:
