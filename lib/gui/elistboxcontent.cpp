@@ -38,9 +38,17 @@ iListboxContent::iListboxContent(): m_listbox(0)
 void iListboxContent::setListbox(eListbox *lb)
 {
 	m_listbox = lb;
-	m_listbox->setItemHeight(getItemHeight());
-	m_listbox->setItemWidth(getItemWidth());
-	m_listbox->setOrientation(getOrientation());
+	if (!lb)
+		return;
+	// Do not propagate the base-class default of -1 (getItemWidth()) - that
+	// made eListbox::setItemWidth() fall into its "invalid, use 20" branch
+	// and silently corrupt the item width.
+	if (int h = getItemHeight(); h > 0)
+		m_listbox->setItemHeight(h);
+	if (int w = getItemWidth(); w > 0)
+		m_listbox->setItemWidth(w);
+	if (int o = getOrientation(); o > 0)
+		m_listbox->setOrientation(o);
 }
 
 int iListboxContent::currentCursorSelectable()
@@ -53,7 +61,7 @@ int iListboxContent::currentCursorSelectable()
 DEFINE_REF(eListboxPythonStringContent);
 
 eListboxPythonStringContent::eListboxPythonStringContent()
-	:m_cursor(0), m_saved_cursor(0), m_itemheight(25), m_itemwidth(25), m_max_text_width(0), m_orientation(1)
+	:m_cursor(0), m_saved_cursor(0), m_itemheight(25), m_itemwidth(25), m_max_text_width(-1), m_orientation(1)
 {
 }
 
@@ -106,15 +114,25 @@ int eListboxPythonStringContent::cursorGet()
 
 int eListboxPythonStringContent::currentCursorSelectable()
 {
-	if (m_list && cursorValid())
-	{
-		ePyObject item = PyList_GET_ITEM(m_list, m_cursor);
-		if (!PyTuple_Check(item))
-			return 1;
-		if (PyTuple_Size(item) >= 2)
-			return 1;
-	}
-	return 0;
+	if (!m_list || !cursorValid())
+		return 0;
+	// Defensive bounds check - PyList_GET_ITEM with a negative index would
+	// raise a Python exception.
+	if (m_cursor < 0 || m_cursor >= size())
+		return 0;
+	ePyObject item = PyList_GET_ITEM(m_list, m_cursor);
+	// A bare None is a separator -> not selectable.
+	// A non-tuple is selectable (plain string entry).
+	// A tuple is selectable as long as its first element is not None.
+	//   (a 1-tuple `(text,)` is a "gray text" entry, and must stay selectable -
+	//    the previous code skipped it entirely)
+	if (item == Py_None)
+		return 0;
+	if (!PyTuple_Check(item))
+		return 1;
+	if (PyTuple_Size(item) == 0)
+		return 0;
+	return PyTuple_GET_ITEM(item, 0) != Py_None ? 1 : 0;
 }
 
 void eListboxPythonStringContent::cursorSave()
@@ -141,39 +159,63 @@ void eListboxPythonStringContent::setSize(const eSize &size)
 
 int eListboxPythonStringContent::getMaxItemTextWidth()
 {
+	// Cache the result. -1 (the member initializer) means "not yet computed".
+	// Invalidated by setList().
+	if (m_max_text_width >= 0)
+	{
+		int text_offset = 1;
+		if (m_listbox)
+		{
+			eListboxStyle *local_style = m_listbox->getLocalStyle();
+			if (local_style)
+				text_offset = local_style->m_text_offset.x();
+		}
+		return m_max_text_width + (text_offset * 2);
+	}
+
 	ePtr<gFont> fnt;
 	eListboxStyle *local_style = 0;
-	int m_text_offset = 1;
 	if (m_listbox)
 		local_style = m_listbox->getLocalStyle();
-	if (local_style) {
+	if (local_style)
 		fnt = local_style->m_font;
-		m_text_offset = local_style->m_text_offset.x();
-	}
-	if (!fnt) fnt = new gFont("Regular", 20);
+	if (!fnt)
+		fnt = new gFont("Regular", 20);
 
-	for (int i = 0; i < size(); i++)
+	int max_width = 0;
+	int count = size();
+	for (int i = 0; i < count; i++)
 	{
 		ePyObject item = PyList_GET_ITEM(m_list, i);
 		if (PyTuple_Check(item))
 		{
+			if (PyTuple_Size(item) == 0)
+				continue;
 			item = PyTuple_GET_ITEM(item, 0);
 		}
-		if (item != Py_None) {
-			const char *string = PyUnicode_Check(item) ? PyUnicode_AsUTF8(item) : "<not-a-string>";
-			eRect textRect = eRect(0,0, 8000, 100);
-
+		if (item != Py_None && PyUnicode_Check(item))
+		{
+			const char *string = PyUnicode_AsUTF8(item);
+			if (!string)
+			{
+				PyErr_Clear();
+				continue;
+			}
+			eRect textRect = eRect(0, 0, 8000, 100);
 			ePtr<eTextPara> para = new eTextPara(textRect);
 			para->setFont(fnt);
 			para->renderString(string);
 			int textWidth = para->getBoundBox().width();
-			if (textWidth > m_max_text_width) {
-				m_max_text_width = textWidth;
-			}
+			if (textWidth > max_width)
+				max_width = textWidth;
 		}
 	}
+	m_max_text_width = max_width;
 
-	return m_max_text_width + (m_text_offset*2);
+	int text_offset = 1;
+	if (local_style)
+		text_offset = local_style->m_text_offset.x();
+	return m_max_text_width + (text_offset * 2);
 }
 
 void eListboxPythonStringContent::paint(gPainter &painter, eWindowStyle &style, const ePoint &offset, int selected)
@@ -221,7 +263,14 @@ void eListboxPythonStringContent::paint(gPainter &painter, eWindowStyle &style, 
 				painter.setForegroundColor(local_style->m_foreground_color);
 		}
 	}
-	if (!fnt) fnt = new gFont("Regular", 20);
+	if (!fnt)
+	{
+		// Cache the fallback font - creating one per paint was wasteful.
+		static ePtr<gFont> default_font;
+		if (!default_font)
+			default_font = new gFont("Regular", 20);
+		fnt = default_font;
+	}
 	bool isverticallb = m_listbox && m_listbox->getOrientation() == 1;
 	/* if we have no transparent background */
 	// If the skin sets a background color but the widget was marked
@@ -385,6 +434,9 @@ void eListboxPythonStringContent::setList(ePyObject list)
 		Py_INCREF(m_list);
 	}
 
+	// Invalidate the cached max text width so it is recomputed for the new list.
+	m_max_text_width = -1;
+
 	if (m_listbox)
 		m_listbox->entryReset(false);
 }
@@ -492,9 +544,26 @@ void eListboxPythonConfigContent::paint(gPainter &painter, eWindowStyle &style, 
 	}
 
 	if (!fnt)
-		fnt = new gFont("Regular", 20);
+	{
+		// Cache the fallback entry font - creating one per paint was wasteful.
+		static ePtr<gFont> default_font;
+		if (!default_font)
+			default_font = new gFont("Regular", 20);
+		fnt = default_font;
+	}
 	if (!fnt2)
-		fnt2 = new gFont(fnt->family, fnt->pointSize - fnt->pointSize/5);
+	{
+		// Cache the fallback value font, keyed on the base font so a skin
+		// font-alias change (skin reload) correctly rebuilds it.
+		static ePtr<gFont> default_font2;
+		static gFont *cached_base = 0;
+		if (!default_font2 || cached_base != fnt)
+		{
+			default_font2 = new gFont(fnt->family, fnt->pointSize - fnt->pointSize/5);
+			cached_base = fnt;
+		}
+		fnt2 = default_font2;
+	}
 
 	if (!local_style || !local_style->m_transparent_background)
 		/* if we have no transparent background */
@@ -988,6 +1057,20 @@ static ePyObject lookupColor(ePyObject color, ePyObject data)
 
 int eListboxPythonMultiContent::getMaxItemTextWidth()
 {
+	// Cache the result. -1 (the member initializer in eListboxPythonStringContent)
+	// means "not yet computed". Invalidated by setList().
+	if (m_max_text_width >= 0)
+	{
+		int text_offset = 1;
+		if (m_listbox)
+		{
+			eListboxStyle *local_style = m_listbox->getLocalStyle();
+			if (local_style)
+				text_offset = local_style->m_text_offset.x();
+		}
+		return m_max_text_width + (text_offset * 2);
+	}
+
 	ePtr<gFont> fnt;
 	eListboxStyle *local_style = 0;
 	int m_text_offset = 1;
@@ -1000,6 +1083,7 @@ int eListboxPythonMultiContent::getMaxItemTextWidth()
 	if (!fnt) fnt = new gFont("Regular", 20);
 
 	ePyObject items, buildfunc_ret;
+	int max_width = 0;
 	if (m_list) {
 		for (int k = 0; k < size(); k++)
 		{
@@ -1037,7 +1121,7 @@ int eListboxPythonMultiContent::getMaxItemTextWidth()
 
 				if (!item)
 				{
-					eDebug("[eListboxPythonMultiContent] no items[%d] ?", i);
+					eDebug("[eListboxPythonMultiContent] no items[%d]?", i);
 					continue;
 				}
 
@@ -1059,34 +1143,34 @@ int eListboxPythonMultiContent::getMaxItemTextWidth()
 
 				switch (type)
 				{
-				case TYPE_TEXT: // text
-				{
-					ePyObject px = PyTuple_GET_ITEM(item, 1), pfnt = PyTuple_GET_ITEM(item, 5), pstring = PyTuple_GET_ITEM(item, 7);
+					case TYPE_TEXT: // text
+					{
+						ePyObject px = PyTuple_GET_ITEM(item, 1), pfnt = PyTuple_GET_ITEM(item, 5), pstring = PyTuple_GET_ITEM(item, 7);
 
-					if (PyLong_Check(pstring) && data) /* if the string is in fact a number, it refers to the 'data' list. */
-						pstring = PyTuple_GetItem(data, PyLong_AsLong(pstring));
+						if (PyLong_Check(pstring) && data) /* if the string is in fact a number, it refers to the 'data' list. */
+							pstring = PyTuple_GetItem(data, PyLong_AsLong(pstring));
 
-					if (pfnt) {
-						int fnt_i = PyLong_AsLong(pfnt);
-						if (m_font.find(fnt_i) != m_font.end()) fnt = m_font[fnt_i];
+						if (pfnt) {
+							int fnt_i = PyLong_AsLong(pfnt);
+							if (m_font.find(fnt_i) != m_font.end()) fnt = m_font[fnt_i];
+						}
+
+									/* don't do anything if we have 'None' as string */
+						if (pstring == Py_None)
+							continue;
+
+						const char *string = (PyUnicode_Check(pstring)) ? PyUnicode_AsUTF8(pstring) : "<not-a-string>";
+						eRect textRect = eRect(0,0, 9999, 100);
+
+						ePtr<eTextPara> para = new eTextPara(textRect);
+						para->setFont(fnt);
+						para->renderString(string);
+						int textWidth = para->getBoundBox().width() + PyLong_AsLong(px);
+						if (textWidth > max_width) {
+							max_width = textWidth;
+						}
+						break;
 					}
-
-								/* don't do anything if we have 'None' as string */
-					if (pstring == Py_None)
-						continue;
-
-					const char *string = (PyUnicode_Check(pstring)) ? PyUnicode_AsUTF8(pstring) : "<not-a-string>";
-					eRect textRect = eRect(0,0, 9999, 100);
-
-					ePtr<eTextPara> para = new eTextPara(textRect);
-					para->setFont(fnt);
-					para->renderString(string);
-					int textWidth = para->getBoundBox().width() + PyLong_AsLong(px);
-					if (textWidth > m_max_text_width) {
-						m_max_text_width = textWidth;
-					}
-					break;
-				}
 				}
 
 			}
@@ -1094,7 +1178,9 @@ int eListboxPythonMultiContent::getMaxItemTextWidth()
 
 	}
 
-	return m_max_text_width + (m_text_offset*2);
+	// Store result - setList() invalidates this.
+	m_max_text_width = max_width;
+	return m_max_text_width + (m_text_offset * 2);
 }
 
 void eListboxPythonMultiContent::paint(gPainter &painter, eWindowStyle &style, const ePoint &offset, int selected)
@@ -1892,43 +1978,47 @@ void eListboxPythonMultiContent::setSelectableFunc(ePyObject cb)
 int eListboxPythonMultiContent::currentCursorSelectable()
 {
 	/* each list-entry is a list of tuples. if the first of these is none, it's not selectable */
-	if (m_list && cursorValid())
+	if (!m_list || !cursorValid())
+		return 0;
+	if (m_cursor < 0 || m_cursor >= size())
+		return 0;
+
+	ePyObject entry = PyList_GET_ITEM(m_list, m_cursor); // borrowed reference!
+
+	if (m_selectableFunc && PyCallable_Check(m_selectableFunc))
 	{
-		if (m_selectableFunc && PyCallable_Check(m_selectableFunc))
+		if (PyTuple_Check(entry))
 		{
-			ePyObject args = PyList_GET_ITEM(m_list, m_cursor); // borrowed reference!
-			if (PyTuple_Check(args))
+			ePyObject ret = PyObject_CallObject(m_selectableFunc, entry);
+			if (ret)
 			{
-				ePyObject ret = PyObject_CallObject(m_selectableFunc, args);
-				if (ret)
-				{
-					bool retval = ret == Py_True;
-					Py_DECREF(ret);
-					return retval;
-				}
-				eDebug("[eListboxPythonMultiContent] call m_selectableFunc failed!!! assume not callable");
+				bool retval = ret == Py_True;
+				Py_DECREF(ret);
+				return retval;
 			}
-			else
-				eDebug("[eListboxPythonMultiContent] m_list[m_cursor] is not a tuple!!! assume not callable");
+			// Callable raised - do not leave the exception set.
+			PyErr_Clear();
+			eDebug("[eListboxPythonMultiContent] call m_selectableFunc failed!!! assume not callable");
 		}
 		else
-		{
-			ePyObject item = PyList_GET_ITEM(m_list, m_cursor);
-			if (PyList_Check(item))
-			{
-				item = PyList_GET_ITEM(item, 0);
-				if (item != Py_None)
-					return 1;
-			} else if (PyTuple_Check(item))
-			{
-				item = PyTuple_GET_ITEM(item, 0);
-				if (item != Py_None)
-					return 1;
-			}
-			else if (m_buildFunc && PyCallable_Check(m_buildFunc))
-				return 1;
-		}
+			eDebug("[eListboxPythonMultiContent] m_list[m_cursor] is not a tuple!!! assume not callable");
+		return 0;
 	}
+
+	if (PyList_Check(entry))
+	{
+		if (PyList_Size(entry) == 0)
+			return 0;
+		return PyList_GET_ITEM(entry, 0) != Py_None ? 1 : 0;
+	}
+	if (PyTuple_Check(entry))
+	{
+		if (PyTuple_Size(entry) == 0)
+			return 0;
+		return PyTuple_GET_ITEM(entry, 0) != Py_None ? 1 : 0;
+	}
+	if (m_buildFunc && PyCallable_Check(m_buildFunc))
+		return 1;
 	return 0;
 }
 

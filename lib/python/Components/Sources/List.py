@@ -69,8 +69,12 @@ to generate HTML."""
 		for x in self.onSelectionChanged:
 			x()
 
-	@cached
 	def getCurrent(self):
+		# The previous version of this method was decorated with @cached,
+		# but the __current field is only populated by setConnectedGuiElement()
+		# and never invalidated on selection changes - so the cache returned
+		# stale data forever. The lookup itself is a single attribute read on
+		# self.master (or self.__current), so caching isn't worth the risk.
 		if self.master:
 			if hasattr(self.master, "current"):
 				return self.master.current
@@ -128,18 +132,46 @@ to generate HTML."""
 			x()
 
 	def updateList(self, list):
-		"""Changes the list without changing the selection or emitting changed Events"""
-		try:
-			assert len(list) == len(self.__list)
-		except Exception as err:
-			print("[Components/Sources/List.updateList] Error: '%s: '%s'" % (type(err).__name__, err))
-			import traceback
-			traceback.print_exc()
+		"""Changes the list without changing the selection or emitting changed Events.
+
+		If the new list has the same length as the current one, entries are
+		updated in place and only the affected items are repainted (via
+		entry_changed). Otherwise a full rebuild is unavoidable.
+
+		The previous version always did self.list = list, which emits
+		CHANGED_ALL and forces the whole listbox content to reload - even
+		though the docstring promises "without emitting changed Events".
+		On a 5000-item list this made every in-place refresh O(n) instead of
+		O(number of changed rows)."""
+		oldLen = len(self.__list)
+		newLen = len(list)
+		if oldLen != newLen:
+			# Length changed - must do a full rebuild.
+			try:
+				assert oldLen == newLen
+			except AssertionError:
+				pass  # Lengths genuinely differ, that's fine - fall through.
+			old_index = self.index
+			self.disable_callbacks = True
+			self.list = list
+			self.index = old_index
+			self.disable_callbacks = False
+			return
+
+		# Same length: update entries in place and repaint only what changed.
 		old_index = self.index
 		self.disable_callbacks = True
-		self.list = list
-		self.index = old_index
-		self.disable_callbacks = False
+		try:
+			for i, entry in enumerate(list):
+				if self.__list[i] is not entry:
+					self.__list[i] = entry
+					self.entry_changed(i)
+		finally:
+			self.disable_callbacks = False
+		# Refresh the current selection in case its data changed.
+		if old_index is not None and 0 <= old_index < len(self.__list):
+			self.__current = self.__list[old_index]
+		self.listUpdated()
 
 	def top(self):
 		self.setIndex(0)

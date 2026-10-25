@@ -60,7 +60,7 @@ protected:
 	ePtr<gFont> m_font;
 	int m_itemheight;
 	int m_itemwidth;
-	int m_max_text_width;
+	int m_max_text_width = -1;   // -1 = not yet computed; caches getMaxItemTextWidth()
 	int m_orientation;
 	gRGB m_sepline_color;
 	int m_sepline_color_set;

@@ -629,17 +629,23 @@ class AttributeParser:
 			print("[Skin] Error: Invalid orientation '%s'!  Must be one of 'orVertical', 'orTopToBottom', 'orBottomToTop', 'orHorizontal', 'orLeftToRight' or 'orRightToLeft'." % value)
 
 	def listOrientation(self, value):  # Used by eListbox.
-		try:
-			self.guiObject.setOrientation({
-				"orVertical": self.guiObject.orVertical,
-				"vertical": self.guiObject.orVertical,  # compatibility with openatv
-				"orHorizontal": self.guiObject.orHorizontal,
-				"horizontal": self.guiObject.orHorizontal,  # compatibility with openatv
-				"orGrid": self.guiObject.orGrid,
-				"grid": self.guiObject.orGrid,  # compatibility with openatv
-			}[value])
-		except KeyError:
-			print("[Skin] Error: Invalid listOrientation '%s'!  Must be one of 'orVertical', 'vertical', 'orHorizontal', 'horizontal', 'orGrid' or 'grid'." % value)
+		# eListbox enum in OpenPLi: orHorizontal=0, orVertical=1, orGrid=2.
+		# Do NOT copy the OpenATV numeric values (OpenATV uses orVertical=1, orHorizontal=2, orGrid=3).
+		options = {
+			"orVertical": self.guiObject.orVertical,
+			"vertical": self.guiObject.orVertical,
+			"orTopToBottom": self.guiObject.orVertical,
+			"orHorizontal": self.guiObject.orHorizontal,
+			"horizontal": self.guiObject.orHorizontal,
+			"orLeftToRight": self.guiObject.orHorizontal,
+			"orGrid": self.guiObject.orGrid,
+			"grid": self.guiObject.orGrid,
+		}
+		if value in options:
+			self.guiObject.setOrientation(options[value])
+			return
+		print("[Skin] Error: Invalid listOrientation '%s'!  Must be one of %s.  Using 'orVertical'." % (value, ", ".join("'%s'" % k for k in options)))
+		self.guiObject.setOrientation(self.guiObject.orVertical)
 
 	def valign(self, value):
 		if hasattr(self.guiObject, "setVAlign"):

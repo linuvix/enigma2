@@ -147,33 +147,38 @@ void eListbox::moveToEnd()
 	if (!m_content)
 		return;
 	/* move to last existing one ("end" is already invalid) */
-	m_content->cursorEnd(); m_content->cursorMove(-1);
-	/* current selection invisible? */
-	if (m_orientation == orVertical)
+	m_content->cursorEnd();
+	m_content->cursorMove(-1);
+	int last = m_content->cursorGet();
+
+	if (m_orientation == orGrid)
 	{
-		if (m_top + m_items_per_page <= m_content->cursorGet())
-		{
-			int rest = m_content->size() % m_items_per_page;
-			if (rest)
-				m_top = m_content->cursorGet() - rest + 1;
-			else
-				m_top = m_content->cursorGet() - m_items_per_page + 1;
-			if (m_top < 0)
-				m_top = 0;
-		}
+		// Align the grid so that the LAST ROW (not the last cell's
+		// residue) is at the bottom. Each page covers
+		// m_max_columns * m_max_rows cells.
+		int cells = m_max_columns * m_max_rows;
+		if (cells > 0)
+			m_top = (last / cells) * m_max_rows;
+		return;
 	}
-	else
+
+	if (m_orientation == orHorizontal)
 	{
-		if (m_left + m_items_per_page <= m_content->cursorGet())
+		if (m_left + m_items_per_page <= last)
 		{
-			int rest = m_content->size() % m_items_per_page;
-			if (rest)
-				m_left = m_content->cursorGet() - rest + 1;
-			else
-				m_left = m_content->cursorGet() - m_items_per_page + 1;
+			m_left = last - (last % m_items_per_page);
 			if (m_left < 0)
 				m_left = 0;
 		}
+		return;
+	}
+
+	// orVertical
+	if (m_items_per_page > 0 && m_top + m_items_per_page <= last)
+	{
+		m_top = last - (last % m_items_per_page);
+		if (m_top < 0)
+			m_top = 0;
 	}
 }
 
@@ -247,40 +252,47 @@ void eListbox::moveSelection(long dir)
 	if (!m_items_per_page)
 		return;
 
-	bool isGrid = m_orientation == orGrid;
+	// Grid movement needs at least one column. A freshly-created listbox, or a
+	// listbox whose width is still 0, has m_max_columns == 0 - in that case
+	// every grid branch (which divides by m_max_columns) would crash with a
+	// SIGFPE. Fall back to the linear path until the widget is sized.
+	bool isGrid = m_orientation == orGrid && m_max_columns > 0;
 	/* we need the old top/sel to see what we have to redraw */
 	int oldtop = m_top;
 	int oldleft = m_left;
 	int oldsel = m_selected;
 	int prevsel = oldsel;
 	int newsel;
-	int oldRow = (isGrid && m_max_columns != 0) ? oldsel / m_max_columns : 0;
-	int oldColumn = (isGrid && m_max_columns != 0) ? oldsel % m_max_columns : 0;
+	int oldRow = isGrid ? oldsel / m_max_columns : 0;
+	int oldColumn = isGrid ? oldsel % m_max_columns : 0;
 
 	switch (r_dir) {
 		case moveEnd:
 			if (isGrid)
 			{
-				int newRow = oldRow;
-				do
+				// Walk forward while we stay on the same row. Then step
+				// back one so we end up on the last selectable cell of
+				// the current row (not one row up, which the previous
+				// fall-through into moveUp caused).
+				int saved = m_content->cursorGet();
+				int rowStart = oldsel - oldColumn;
+				int rowEnd = rowStart + m_max_columns;
+				if (rowEnd > m_content->size())
+					rowEnd = m_content->size();
+				int last = saved;
+				for (int i = saved + 1; i < rowEnd; ++i)
 				{
-					m_content->cursorMove(1);
-					newsel = m_content->cursorGet();
-					newRow = newsel / m_max_columns;
-					if (newRow != oldRow || !m_content->currentCursorSelectable())
-					{
-						m_content->cursorSet(prevsel);
-						break;
-					}
-					if (newsel == prevsel)
-					{
-						break;
-					}
-					prevsel = newsel;
-				} while (true);
+					m_content->cursorSet(i);
+					if (m_content->currentCursorSelectable())
+						last = i;
+				}
+				m_content->cursorSet(last);
+				// Do NOT fall through to moveUp - that would move us one
+				// row up from where we just landed.
+				newsel = m_content->cursorGet();
+				break;
 			}
-			else
-				m_content->cursorEnd();
+			m_content->cursorEnd();
 			[[fallthrough]];
 		case moveUp:
 		case prevItem:
@@ -289,21 +301,27 @@ void eListbox::moveSelection(long dir)
 				if (r_dir == moveUp)
 				{
 					int current = oldsel;
+					// Guard against pathological content where no cell is
+					// selectable - otherwise the do/while below spins forever.
+					int guard = 0;
 
 					do {
+						if (++guard > m_content->size())
+							break;
+
 						// Move to previous row in same column
 						current -= m_max_columns;
 
 						if (current < 0) {
 							// Wrap to bottom of same column if enabled
 							if (m_enabled_wrap_around) {
-								int lastRow = (m_content->size() - 1) / m_max_columns;
-								current = lastRow * m_max_columns + oldColumn;
-
-								// Clamp if out of bounds
+								int lastRowStart = ((m_content->size() - 1) / m_max_columns) * m_max_columns;
+								current = lastRowStart + oldColumn;
+								// The last row may be shorter than the column index.
 								if (current >= m_content->size())
-									current -= m_max_columns;
+									current = m_content->size() - 1;
 							} else {
+								m_content->cursorSet(oldsel);
 								break;
 							}
 						}
@@ -311,10 +329,9 @@ void eListbox::moveSelection(long dir)
 						m_content->cursorSet(current);
 
 						if (!m_content->cursorValid()) {
-							// If cursor is invalid, reset or wrap
-							if (m_enabled_wrap_around) {
+							if (m_enabled_wrap_around)
 								current = oldColumn;
-							} else {
+							else {
 								m_content->cursorSet(oldsel);
 								break;
 							}
@@ -328,7 +345,6 @@ void eListbox::moveSelection(long dir)
 
 					// Final selection
 					newsel = m_content->cursorGet();
-					
 				}
 				else
 				{
@@ -420,37 +436,40 @@ void eListbox::moveSelection(long dir)
 				if (r_dir == moveDown)
 				{
 					int current = oldsel;
-					int totalRows = (m_content->size() + m_max_columns - 1) / m_max_columns;
+					int guard = 0;
 
 					do {
-						int itemRow = current / m_max_columns;
-						bool isLastRow = itemRow == (totalRows - 1);
+						if (++guard > m_content->size())
+							break;
+
 						current += m_max_columns;  // Move to next row in same column
 
 						if (current >= m_content->size()) {
-							// Wrap to top of same column if enabled
-							if (m_enabled_wrap_around)
-							{
-								if (!isLastRow)
-								{
-									current = m_content->size() - 1;
-								}
-								else
-									current = oldColumn;
+							// Past the end of the list.
+							if (!m_enabled_wrap_around) {
+								// No wrap: stay put. (The old code clamped to
+								// the last item, which is not "no wrap".)
+								m_content->cursorSet(oldsel);
+								break;
 							}
+							// Wrap to top of same column. If the last row is
+							// shorter than oldColumn, snap to the last cell so
+							// the user does not lose the current position.
+							int lastRowStart = ((m_content->size() - 1) / m_max_columns) * m_max_columns;
+							int sameCol = lastRowStart + oldColumn;
+							if (sameCol >= m_content->size())
+								sameCol = m_content->size() - 1;
+							// If we are already on the last available cell for
+							// this column, wrap to the first row.
+							if (current - m_max_columns == sameCol)
+								current = oldColumn;
 							else
-								if (!isLastRow)
-								{
-									current = m_content->size() - 1;
-								}
-								else
-									break;
+								current = sameCol;
 						}
 
 						m_content->cursorSet(current);
 
 						if (!m_content->cursorValid()) {
-							// If cursor is invalid, reset or wrap
 							if (m_enabled_wrap_around)
 								current = oldColumn;
 							else {
@@ -459,13 +478,11 @@ void eListbox::moveSelection(long dir)
 							}
 						}
 
-						// Exit loop if item is selectable
 						if (m_content->currentCursorSelectable())
 							break;
 
 					} while (current != oldsel);
 
-					// Final selection
 					newsel = m_content->cursorGet();
 				}
 				else
@@ -633,8 +650,10 @@ void eListbox::moveSelection(long dir)
 		m_left = m_selected - (m_selected % m_items_per_page);
 	else if (m_orientation == orVertical)
 		m_top = m_selected - (m_selected % m_items_per_page);
-	else
+	else if (isGrid && m_max_rows > 0)
 		m_top = (m_selected / m_items_per_page) * m_max_rows;
+	else
+		m_top = m_selected - (m_selected % (m_items_per_page ? m_items_per_page : 1));
 
 	// if it is, then the old selection clip is irrelevant, clear it or we'll get artifacts
 	if (m_orientation == orVertical || m_orientation == orGrid)
@@ -734,11 +753,17 @@ void eListbox::updateScrollBar()
 		return;
 	}
 
+	// Number of "pages" / visible slots. For grid, that is cells per page
+	// (columns * rows), not rows. Using only m_max_rows under-reported the
+	// scrollable range and the thumb was permanently oversized.
 	int entries = m_content->size();
-	if ((m_orientation == orGrid) && m_max_columns)
-		entries = (m_content->size() + m_max_columns - 1) / m_max_columns;
-
-	int maxItems = (m_orientation == orGrid) ? m_max_rows : m_items_per_page;
+	int maxItems;
+	if (m_orientation == orGrid)
+		maxItems = m_max_columns * m_max_rows;
+	else if (m_orientation == orHorizontal)
+		maxItems = m_items_per_page;      // == size().width() / m_itemwidth
+	else
+		maxItems = m_items_per_page;      // == size().height() / m_itemheight
 
 	if (m_content_changed)
 	{
@@ -943,7 +968,7 @@ int eListbox::event(int event, void *data, void *data2)
 
 						/* (we could clip with entry_clip_rect, but
 						this shouldn't change the behavior of any
-						well behaving content, so it would just
+							well behaving content, so it would just
 						degrade performance without any gain.) */
 
 					m_content->cursorMove(+1);
@@ -962,7 +987,7 @@ int eListbox::event(int event, void *data, void *data2)
 
 						/* (we could clip with entry_clip_rect, but
 						this shouldn't change the behavior of any
-						well behaving content, so it would just
+							well behaving content, so it would just
 						degrade performance without any gain.) */
 
 					m_content->cursorMove(+1);
@@ -1134,7 +1159,7 @@ void eListbox::setSelectionEnable(int en)
 
 void eListbox::entryAdded(int index)
 {
-	if (m_content && (m_content->size() % m_items_per_page) == 1)
+	if (m_content && m_items_per_page && (m_content->size() % m_items_per_page) == 1)
 		m_content_changed=true;
 	/* manage our local pointers. when the entry was added before the current position, we have to advance. */
 
@@ -1160,28 +1185,37 @@ void eListbox::entryAdded(int index)
 	if (m_orientation == orVertical)
 	{
 		if ((m_top <= index) && (index < (m_top + m_items_per_page)))
-		{
-				/* todo, calc exact invalidation... */
 			invalidate();
-		}
 	}
-	else
+	else if (m_orientation == orHorizontal)
 	{
 		if ((m_left <= index) && (index < (m_left + m_items_per_page)))
-		{
-				/* todo, calc exact invalidation... */
 			invalidate();
-		}
+	}
+	else // orGrid
+	{
+		// Any index shift affects every cell position in a grid, so just
+		// repaint the whole thing. Cheap relative to a stale grid.
+		invalidate();
 	}
 }
 
 void eListbox::entryRemoved(int index)
 {
-	if (m_content && !(m_content->size() % m_items_per_page))
+	if (m_content && m_items_per_page && !(m_content->size() % m_items_per_page))
 		m_content_changed=true;
 
-	if (index == m_selected && m_content)
-		m_selected = m_content->cursorGet();
+	if (m_content)
+	{
+		// Remove happened BELOW the current selection: keep the selection on
+		// the same underlying item by decrementing the index. Remove happened
+		// ON the selection: let the content decide (it may have already moved
+		// the cursor to a neighbour).
+		if (index < m_selected)
+			--m_selected;
+		else if (index == m_selected)
+			m_selected = m_content->cursorGet();
+	}
 
 	if (m_content && m_content->cursorGet() >= m_content->size())
 		moveSelection(moveUp);
@@ -1191,18 +1225,16 @@ void eListbox::entryRemoved(int index)
 	if (m_orientation == orVertical)
 	{
 		if ((m_top <= index) && (index < (m_top + m_items_per_page)))
-		{
-				/* todo, calc exact invalidation... */
 			invalidate();
-		}
 	}
-	else
+	else if (m_orientation == orHorizontal)
 	{
 		if ((m_left <= index) && (index < (m_left + m_items_per_page)))
-		{
-				/* todo, calc exact invalidation... */
 			invalidate();
-		}
+	}
+	else // orGrid
+	{
+		invalidate();
 	}
 }
 
@@ -1210,7 +1242,7 @@ void eListbox::entryChanged(int index)
 {
 	if (m_orientation == orVertical)
 	{
-		if ((m_top <= index) && (index <= (m_top + m_items_per_page)))
+		if ((m_top <= index) && (index < (m_top + m_items_per_page)))
 		{
 			gRegion inv = eRect(0, m_itemheight * (index-m_top), size().width(), m_itemheight);
 			invalidate(inv);
@@ -1218,7 +1250,7 @@ void eListbox::entryChanged(int index)
 	}
 	else if (m_orientation == orHorizontal)
 	{
-		if ((m_left <= index) && (index <= (m_left + m_items_per_page + 1)))
+		if ((m_left <= index) && (index < (m_left + m_items_per_page)))
 		{
 			gRegion inv = eRect(m_itemwidth * (index-m_left), 0, m_itemwidth, size().height());
 			invalidate(inv);
