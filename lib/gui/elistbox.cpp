@@ -756,14 +756,11 @@ void eListbox::updateScrollBar()
 	// Number of "pages" / visible slots. For grid, that is cells per page
 	// (columns * rows), not rows. Using only m_max_rows under-reported the
 	// scrollable range and the thumb was permanently oversized.
+	// For orVertical and orHorizontal, m_items_per_page already equals the
+	// number of visible items (m_items_per_page is set in recalcSize() as
+	// height/itemheight for vertical, width/itemwidth for horizontal).
 	int entries = m_content->size();
-	int maxItems;
-	if (m_orientation == orGrid)
-		maxItems = m_max_columns * m_max_rows;
-	else if (m_orientation == orHorizontal)
-		maxItems = m_items_per_page;      // == size().width() / m_itemwidth
-	else
-		maxItems = m_items_per_page;      // == size().height() / m_itemheight
+	int maxItems = (m_orientation == orGrid) ? (m_max_columns * m_max_rows) : m_items_per_page;
 
 	if (m_content_changed)
 	{
