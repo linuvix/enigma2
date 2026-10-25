@@ -18,6 +18,8 @@ eLabel::eLabel(eWidget *parent, int markedPos): eWidget(parent)
 
 	m_nowrap = 0;
 	m_border_size = 0;
+	// Default to transparent in the absence of a background color
+	setTransparent(1);
 }
 
 int eLabel::event(int event, void *data, void *data2)

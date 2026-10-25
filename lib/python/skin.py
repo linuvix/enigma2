@@ -723,31 +723,36 @@ class AttributeParser:
 	def backgroundColor(self, value):
 		if "," in value or value in gradients:
 			start, mid, end, direction, blend = parseGradient(value)
-			# If the parsed start colour is fully transparent, don't override
-			# whatever the widget/skin already set - that's clearly a bad value.
-			if start.argb() & 0xFF000000 == 0:   # alpha == 0
-				return
-			# eLabel inherits setBackgroundGradient() from eWidget but does not
-			# render a gradient - it is a flat label.  Use the flat start colour
-			# so the skin's intended look is preserved.
-			if isinstance(self.guiObject, eLabel) or not hasattr(self.guiObject, "setBackgroundGradient"):
-				self.guiObject.setBackgroundColor(start)
-			else:
+			# Check if the resolved start color is completely transparent.
+			isTransparent = (start.argb() & 0xFF000000) == 0
+			
+			if isinstance(self.guiObject, eLabel):
+				# eLabel only supports flat colors. If the gradient resolves to
+				# transparent, do not set a background so the skin's parent
+				# background shows through (fixes the dark grey blocks).
+				if not isTransparent:
+					self.guiObject.setBackgroundColor(start)
+			elif hasattr(self.guiObject, "setBackgroundGradient"):
 				self.guiObject.setBackgroundGradient(start, mid, end, direction, bool(blend))
+			else:
+				if not isTransparent:
+					self.guiObject.setBackgroundColor(start)
 		else:
 			self.guiObject.setBackgroundColor(parseColor(value))
 
 	def foregroundColor(self, value):
 		if "," in value or value in gradients:
 			start, mid, end, direction, blend = parseGradient(value)
-			# If the parsed start colour is fully transparent, don't override
-			# whatever the widget/skin already set - that's clearly a bad value.
-			if start.argb() & 0xFF000000 == 0:
-				return
-			if isinstance(self.guiObject, eLabel) or not hasattr(self.guiObject, "setForegroundGradient"):
-				self.guiObject.setForegroundColor(start)
-			else:
+			isTransparent = (start.argb() & 0xFF000000) == 0
+			
+			if isinstance(self.guiObject, eLabel):
+				if not isTransparent:
+					self.guiObject.setForegroundColor(start)
+			elif hasattr(self.guiObject, "setForegroundGradient"):
 				self.guiObject.setForegroundGradient(start, mid, end, direction, bool(blend))
+			else:
+				if not isTransparent:
+					self.guiObject.setForegroundColor(start)
 		else:
 			self.guiObject.setForegroundColor(parseColor(value))
 
