@@ -482,6 +482,8 @@ class AttributeParser:
 		except SkinError as err:
 			print("[Skin] Error: %s" % str(err))
 		except Exception:
+			import traceback
+			traceback.print_exc()
 			print("[Skin] Attribute '%s' with wrong (or unknown) value '%s' in object of type '%s'!" % (attrib, value, self.guiObject.__class__.__name__))
 
 	def applyAll(self, attrs):
