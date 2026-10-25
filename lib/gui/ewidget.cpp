@@ -485,9 +485,12 @@ int eWidget::event(int event, void *data, void *data2)
 		}
 		else
 		{
-			// If the widget is transparent, do nothing. Let whatever
-			// was drawn behind it (parent background, video, etc.)
-			// show through, just like OpenViX does.
+			eWidget *w = this;
+			while (w && !w->m_have_background_color)
+				w = w->m_parent;
+
+			if (w)
+				painter.setBackgroundColor(w->m_background_color);
 		}
 		break;
 	}
