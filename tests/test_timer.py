@@ -67,9 +67,8 @@ def test_timer(repeat=0, timer_start=3600, timer_length=1000, sim_length=86400 *
 		t_repeated = time.localtime(timers[0].begin)
 		print(t_initial)
 		print(t_repeated)
-
-	if t_initial[3:6] != t_repeated[3:6]:
-		raise tests.TestError("repeated timer time of day does not match")
+		if t_initial[3:6] != t_repeated[3:6]:
+			raise tests.TestError("repeated timer time of day does not match")
 
 
 # required stuff for timer (we try to keep this minimal)
