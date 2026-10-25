@@ -358,15 +358,18 @@ def parseGradient(value):
 		else:
 			break
 
+	# alphaBlend MUST be a Python bool - SWIG-typed setBackgroundGradient() /
+	# setForegroundGradient() / setGradient() reject int for the alphablend
+	# argument with "TypeError: argument N of type 'bool'".
 	if consumed < 2:
-		return (gRGB(0x00000000), gRGB(0x00000000), gRGB(0x00000000), eWidget.GRADIENT_VERTICAL, 0)
+		return (gRGB(0x00000000), gRGB(0x00000000), gRGB(0x00000000), eWidget.GRADIENT_VERTICAL, False)
 
 	if consumed == 2:
 		gradientColors[2] = gradientColors[1]
 
 	remaining = data[consumed:]
 	direction = eWidget.GRADIENT_VERTICAL
-	alphaBlend = 0
+	alphaBlend = False
 
 	if remaining:
 		direction = {
@@ -375,7 +378,7 @@ def parseGradient(value):
 		}.get(remaining[0].lower(), eWidget.GRADIENT_VERTICAL)
 
 		if len(remaining) > 1:
-			alphaBlend = 1 if parseBoolean("alphablend", remaining[1]) else 0
+			alphaBlend = True if parseBoolean("alphablend", remaining[1]) else False
 
 	return (gradientColors[0], gradientColors[1], gradientColors[2], direction, alphaBlend)
 
@@ -482,8 +485,6 @@ class AttributeParser:
 		except SkinError as err:
 			print("[Skin] Error: %s" % str(err))
 		except Exception:
-			import traceback
-			traceback.print_exc()
 			print("[Skin] Attribute '%s' with wrong (or unknown) value '%s' in object of type '%s'!" % (attrib, value, self.guiObject.__class__.__name__))
 
 	def applyAll(self, attrs):
@@ -701,49 +702,47 @@ class AttributeParser:
 	def backgroundColor(self, value):
 		if "," in value or value in gradients:
 			start, mid, end, direction, blend = parseGradient(value)
-			# Not every widget supports gradients (e.g. eLabel only has a flat
-			# background colour). Fall back to the gradient's start colour so
-			# skin authors get a sensible approximation instead of an error
-			# and a label with no background at all.
-			if hasattr(self.guiObject, "setBackgroundGradient"):
-				self.guiObject.setBackgroundGradient(start, mid, end, direction, blend)
-			else:
+			# eLabel inherits setBackgroundGradient() from eWidget but does not
+			# render a gradient - it is a flat label.  Use the flat start
+			# colour so the skin's intended look is preserved.
+			if isinstance(self.guiObject, eLabel) or not hasattr(self.guiObject, "setBackgroundGradient"):
 				self.guiObject.setBackgroundColor(start)
+			else:
+				self.guiObject.setBackgroundGradient(start, mid, end, direction, bool(blend))
 		else:
 			self.guiObject.setBackgroundColor(parseColor(value))
 
 	def foregroundColor(self, value):
 		if "," in value or value in gradients:
 			start, mid, end, direction, blend = parseGradient(value)
-			# See backgroundColor() above - same reasoning.
-			if hasattr(self.guiObject, "setForegroundGradient"):
-				self.guiObject.setForegroundGradient(start, mid, end, direction, blend)
-			else:
+			if isinstance(self.guiObject, eLabel) or not hasattr(self.guiObject, "setForegroundGradient"):
 				self.guiObject.setForegroundColor(start)
+			else:
+				self.guiObject.setForegroundGradient(start, mid, end, direction, bool(blend))
 		else:
 			self.guiObject.setForegroundColor(parseColor(value))
 
 	def backgroundColorGradient(self, value):
 		start, mid, end, direction, blend = parseGradient(value)
-		self.guiObject.setBackgroundGradient(start, mid, end, direction, blend)
+		self.guiObject.setBackgroundGradient(start, mid, end, direction, bool(blend))
 
 	def itemGradient(self, value):
 		start, mid, end, direction, blend = parseGradient(value)
-		self.guiObject.setItemGradient(start, mid, end, direction, blend)
+		self.guiObject.setItemGradient(start, mid, end, direction, bool(blend))
 
 	def itemGradientSelected(self, value):
 		start, mid, end, direction, blend = parseGradient(value)
-		self.guiObject.setItemGradientSelected(start, mid, end, direction, blend)
+		self.guiObject.setItemGradientSelected(start, mid, end, direction, bool(blend))
 
 	def foregroundColorGradient(self, value):
 		start, mid, end, direction, blend = parseGradient(value)
-		self.guiObject.setForegroundGradient(start, mid, end, direction, blend)
+		self.guiObject.setForegroundGradient(start, mid, end, direction, bool(blend))
 
 	def windowStyleColorGradient(self, value):
 		what, spec = value.split(":", 1)
 		what = what.strip()
 		start, mid, end, direction, blend = parseGradient(spec.strip())
-		self.guiObject.setGradient(getattr(self.guiObject, "col" + what), [start, mid, end], direction, blend)
+		self.guiObject.setGradient(getattr(self.guiObject, "col" + what), [start, mid, end], direction, bool(blend))
 
 	def backgroundColorSelected(self, value):
 		self.guiObject.setBackgroundColorSelected(parseColor(value))
@@ -1102,7 +1101,7 @@ def loadSingleSkinData(desktop, screenID, domSkin, pathSkin, scope=SCOPE_CURRENT
 			if cgType and cgValue:
 				start, mid, end, direction, blend = parseGradient(cgValue)
 				try:
-					style.setGradient(eWindowStyleSkinned.__dict__["col" + cgType], [start, mid, end], direction, blend)
+					style.setGradient(eWindowStyleSkinned.__dict__["col" + cgType], [start, mid, end], direction, bool(blend))
 				except Exception as err:
 					print("[Skin] Error: windowstyle colorgradient '%s' failed: %s" % (cgType, err))
 			else:
