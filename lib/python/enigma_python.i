@@ -56,6 +56,7 @@ is usually caused by not marking PSignals as immutable.
 #include <lib/gdi/grc.h>
 #include <lib/gdi/gmaindc.h>
 #include <lib/gui/ewidget.h>
+#include <lib/gui/erectangle.h>
 #include <lib/gui/elabel.h>
 #include <lib/gui/einput.h>
 #include <lib/gui/einputstring.h>
@@ -212,11 +213,81 @@ typedef long time_t;
 %include <lib/gdi/fb.h>
 %include <lib/gdi/font.h>
 %include <lib/gdi/gpixmap.h>
+%include <lib/gdi/grc.h>
 %include <lib/gdi/gmaindc.h>
 %include <lib/gdi/epoint.h>
+
+/*
+ * Python list <-> std::vector<gRGB> conversion without dragging in
+ * std_vector.i (which generates try/catch and dynamic_cast, both
+ * forbidden in this build because of -fno-exceptions / -fno-rtti).
+ *
+ * This handles setBackgroundGradient(), setForegroundGradient(),
+ * setGradient() and any other method that takes a std::vector<gRGB>.
+ *
+ * Must be placed AFTER %include <lib/gdi/grc.h> (so SWIGTYPE_p_gRGB
+ * is already known to SWIG) and BEFORE the eWidget / eWindowStyle /
+ * eSlider headers that declare the gradient methods.
+ */
+%typemap(in) std::vector<gRGB> {
+	$1.clear();
+	if (!PyList_Check($input)) {
+		PyErr_SetString(PyExc_TypeError, "expected a list of gRGB");
+		SWIG_fail;
+	}
+	Py_ssize_t n = PyList_Size($input);
+	for (Py_ssize_t i = 0; i < n; ++i) {
+		PyObject *item = PyList_GetItem($input, i);
+		void *raw = 0;
+		if (SWIG_ConvertPtr(item, &raw, SWIGTYPE_p_gRGB, 0) == -1 || !raw) {
+			PyErr_SetString(PyExc_TypeError, "list must contain gRGB objects");
+			SWIG_fail;
+		}
+		$1.push_back(*reinterpret_cast<gRGB*>(raw));
+	}
+}
+
+%typemap(in) const std::vector<gRGB> & (std::vector<gRGB> tmp) {
+	tmp.clear();
+	if (!PyList_Check($input)) {
+		PyErr_SetString(PyExc_TypeError, "expected a list of gRGB");
+		SWIG_fail;
+	}
+	Py_ssize_t n = PyList_Size($input);
+	for (Py_ssize_t i = 0; i < n; ++i) {
+		PyObject *item = PyList_GetItem($input, i);
+		void *raw = 0;
+		if (SWIG_ConvertPtr(item, &raw, SWIGTYPE_p_gRGB, 0) == -1 || !raw) {
+			PyErr_SetString(PyExc_TypeError, "list must contain gRGB objects");
+			SWIG_fail;
+		}
+		tmp.push_back(*reinterpret_cast<gRGB*>(raw));
+	}
+	$1 = &tmp;
+}
+
+%typemap(out) std::vector<gRGB> {
+	$result = PyList_New($1.size());
+	for (size_t i = 0; i < $1.size(); ++i) {
+		PyObject *item = SWIG_NewPointerObj(new gRGB($1[i]), SWIGTYPE_p_gRGB, SWIG_POINTER_OWN);
+		PyList_SET_ITEM($result, i, item);
+	}
+}
+
+/* ------------------------------------------------------------------ */
+/* FIX: accept float in ePoint constructor for Python 3 compatibility */
+/* ------------------------------------------------------------------ */
+%extend ePoint {
+	ePoint(float x, float y) {
+		return new ePoint((int)x, (int)y);
+	}
+};
+/* ------------------------------------------------------------------ */
+
 %include <lib/gdi/erect.h>
 %include <lib/gdi/esize.h>
 %include <lib/gui/ewidget.h>
+%include <lib/gui/erectangle.h>
 %include <lib/gui/elabel.h>
 %include <lib/gui/einput.h>
 %include <lib/gui/einputstring.h>

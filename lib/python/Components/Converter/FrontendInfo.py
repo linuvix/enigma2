@@ -41,26 +41,54 @@ class FrontendInfo(Converter):
 		else:
 			self.type = self.LOCK
 
+	def getAGC(self):
+		# self.source.agc is the raw 16-bit tuner value (0-65535), same
+		# scale as snr/ber.  Real hardware AGC is always in the thousands,
+		# so a value <= 255 means either "no AGC support" (0/None) or a
+		# bogus small non-zero value as reported by Si2166D/Si2169D
+		# frontends on the DM920 (seen: 89-124).  In both cases ignore it
+		# and fall through to the SNR-based estimate below, otherwise the
+		# display would show >100 %.
+		agc = self.source.agc
+		if agc and agc > 255:
+			return agc
+
+		# No usable hardware AGC: estimate a display value from signal
+		# quality (SNR) so DreamBox users without AGC support still get
+		# a meaningful reading.
+		snr = self.source.snr
+		if not snr:
+			return agc
+		snrPercent = snr * 100.0 / 65535.0
+		if snrPercent < 35:
+			agcPercent = snrPercent * 1.8
+		elif snrPercent < 70:
+			agcPercent = 63 + ((snrPercent - 35) * 0.8)
+		else:
+			agcPercent = 91 + ((snrPercent - 70) * 0.3)
+		# Return on the same 0-65535 scale as a real hardware AGC so that
+		# getText() and getValue() can treat both cases identically.
+		return round(min(100, agcPercent) * 65535 / 100.0)
+
 	@cached
 	def getText(self):
 		assert self.type not in (self.LOCK, self.SLOT_NUMBER), "the text output of FrontendInfo cannot be used for lock info"
 		percent = None
 		swapsnr = config.usage.swap_snr_on_osd.value
-		colors = parameters.get("FrontendInfoColors", (0x0000FF00, 0x00FFFF00, 0x007F7F7F)) # tuner active, busy, available colors
-		if self.type == self.BER: # as count
+		colors = parameters.get("FrontendInfoColors", (0x0000FF00, 0x00FFFF00, 0x007F7F7F))
+		if self.type == self.BER:
 			count = self.source.ber
 			if count is not None:
 				return str(count)
-			else:
-				return _("N/A")
+			return _("N/A")
 		elif self.type == self.AGC:
-			percent = self.source.agc
+			percent = self.getAGC()
 		elif (self.type == self.SNR and not swapsnr) or (self.type == self.SNRdB and swapsnr):
 			percent = self.source.snr
 		elif self.type == self.SNR or self.type == self.SNRdB:
 			if self.source.snr_db is not None:
 				return _("%3.01f dB") % (self.source.snr_db / 100.0)
-			elif self.source.snr is not None: #fallback to normal SNR...
+			if self.source.snr is not None:
 				percent = self.source.snr
 		elif self.type == self.TUNER_TYPE:
 			return self.source.frontend_type or _("Unknown")
@@ -72,7 +100,7 @@ class FrontendInfo(Converter):
 						color = "\c%08x" % colors[0]
 					elif self.source.tuner_mask & 1 << n.slot:
 						color = "\c%08x" % colors[1]
-					elif len(nimmanager.nim_slots) <= self.space_for_tuners or n.isFBCRoot() or self.show_all_non_link_tuners and not (n.isFBCLink() or n.config_mode == "loopthrough"):
+					elif len(nimmanager.nim_slots) <= self.space_for_tuners or n.isFBCRoot() or (self.show_all_non_link_tuners and not (n.isFBCLink() or n.config_mode == "loopthrough")):
 						color = "\c%08x" % colors[2]
 					else:
 						continue
@@ -100,7 +128,7 @@ class FrontendInfo(Converter):
 
 	@cached
 	def getBool(self):
-		assert self.type in (self.LOCK, self.BER, self.SNR, self.SNRdB, self.AGC, self.STRING, self.USE_TUNERS_STRING), "the boolean output of FrontendInfo can only be used for lock, BER, SNR, SNRdB, AGC, STRING, or  USE_TUNERS_STRING"
+		assert self.type in (self.LOCK, self.BER, self.SNR, self.SNRdB, self.AGC, self.STRING, self.USE_TUNERS_STRING), "the boolean output of FrontendInfo can only be used for lock, BER, SNR, SNRdB, AGC, STRING, or USE_TUNERS_STRING"
 		swapsnr = config.usage.swap_snr_on_osd.value
 		if self.type == self.LOCK:
 			lock = self.source.lock
@@ -112,21 +140,25 @@ class FrontendInfo(Converter):
 		elif (self.type == self.SNR and not swapsnr) or (self.type == self.SNRdB and swapsnr):
 			return self.source.snr is not None
 		elif self.type == self.SNR or self.type == self.SNRdB:
-			return (self.source.snr_db is not None or self.source.snr is not None)
+			return self.source.snr_db is not None or self.source.snr is not None
 		elif self.type == self.AGC:
-			return self.source.agc is not None
+			# Use getAGC() rather than self.source.agc: on the DM920 the
+			# driver reports a bogus non-zero value which getAGC() rejects;
+			# checking the raw value here would wrongly report AGC as
+			# available.
+			return self.getAGC() is not None
 		elif self.type in (self.STRING, self.USE_TUNERS_STRING):
 			return bool(self.getText())
 
 	text = property(getText)
-
 	boolean = property(getBool)
 
 	@cached
 	def getValue(self):
 		assert self.type != self.LOCK, "the value/range output of FrontendInfo can not be used for lock info"
 		if self.type == self.AGC:
-			return self.source.agc or 0
+			agc = self.getAGC()
+			return 0 if agc is None else int(agc)
 		elif self.type == self.SNR:
 			return self.source.snr or 0
 		elif self.type == self.BER:

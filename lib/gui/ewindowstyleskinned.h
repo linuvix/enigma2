@@ -2,6 +2,7 @@
 #define __lib_gui_ewindowstyleskinned_h
 
 #include <lib/gui/ewindowstyle.h>
+#include <vector>
 
 class eWindowStyleSkinned: public eWindowStyle
 {
@@ -77,6 +78,10 @@ public:
 	void setColor(int what, const gRGB &back);
 	gRGB getColor(int what);
 
+	void setGradient(int what, const std::vector<gRGB> &colors, uint8_t direction, bool alphablend);
+	bool getGradient(int what, std::vector<gRGB> &colors, uint8_t &direction, bool &alphablend);
+	void clearGradient(int what);
+
 	void setTitleOffset(const eSize &offset);
 	void setTitleFont(gFont *fnt);
 
@@ -96,6 +101,11 @@ private:
 
 	eSize m_title_offset;
 	ePtr<gFont> m_fnt;
+
+	bool m_gradient_set[colMax];
+	std::vector<gRGB> m_gradient_colors[colMax];
+	uint8_t m_gradient_direction[colMax];
+	bool m_gradient_alphablend[colMax];
 
 	void drawBorder(gPainter &painter, const eRect &size, struct borderSet &border, int where, int flags);
 };

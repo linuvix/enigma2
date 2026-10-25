@@ -38,7 +38,7 @@ from ServiceReference import ServiceReference, isPlayableForCur
 
 from Tools.ASCIItranslit import legacyEncode
 from Tools.Directories import fileExists, getRecordingFilename, moveFiles
-from Tools.Notifications import AddPopup, AddNotificationWithCallback, current_notifications, lock, notificationAdded, notifications, RemovePopup
+from Tools.Notifications import AddPopup, AddNotificationWithCallback, current_notifications, lock, notificationAdded, notifications, RemovePopup, AddNotificationWithID
 
 from enigma import eTimer, eServiceCenter, eDVBServicePMTHandler, iServiceInformation, iPlayableService, eServiceReference, eEPGCache, eActionMap, getDesktop, eDVBDB
 from skin import findSkinScreen
@@ -182,7 +182,7 @@ class InfoBarWhitelists:
 
 	def streamrelayChecker(self, playref):
 		is_stream_relay = False
-		if config.streamrelay.useWhitelist.value:
+		if hasattr(config, "streamrelay") and config.streamrelay.useWhitelist.value:
 			playrefstring, renamestring = self.splitref(playref.toString())
 			if '%3a//' not in playrefstring and playrefstring in self.__srefs:
 				url = "http://%s:%s/" % (config.misc.softcam_streamrelay_url.getHTML(), config.misc.softcam_streamrelay_port.value)
@@ -331,6 +331,15 @@ class SecondInfoBar(Screen):
 	def __init__(self, session, skinName):
 		Screen.__init__(self, session)
 		self.skinName = skinName
+		self["key_red"] = StaticText()
+		self["key_green"] = StaticText()
+		self["key_yellow"] = StaticText()
+		self["key_blue"] = StaticText()
+		self.onShow.append(self.__onShow)
+
+	def __onShow(self):
+		self["key_red"].setText(_("Similar"))
+		self["key_blue"].setText(_("Extensions"))
 
 
 class InfoBarShowHide(InfoBarScreenSaver):
@@ -1111,6 +1120,10 @@ class InfoBarMenu:
 
 	def mainMenuClosed(self, *val):
 		self.session.infobar = None
+
+	def showMainMenu(self):
+		"""Compatibility method for plugins expecting showMainMenu"""
+		return self.mainMenu()
 
 
 class InfoBarSimpleEventView:
@@ -2401,10 +2414,19 @@ class InfoBarExtensions:
 		self.list = []
 		self.addExtension((lambda: _("Softcam Setup"), self.openSoftcamSetup, lambda: config.misc.softcam_setup.extension_menu.value and BoxInfo.getItem("HasSoftcamInstalled")), "1")
 		self.addExtension((lambda: _("Manually import from fallback tuner"), self.importChannels, lambda: config.usage.remote_fallback_extension_menu.value and config.usage.remote_fallback_import.value))
-		self["InstantExtensionsActions"] = HelpableActionMap(self, ["InfobarExtensions"],
-			{
+		self["InstantExtensionsActions"] = HelpableActionMap(self, ["InfobarExtensions"], {
 				"extensions": (self.showExtensionSelection, _("Show extensions...")),
-			}, 1) # lower priority
+		}, prio=1, description=_("Extension Actions"))  # Lower priority.
+		self.addExtension(extension=self.getOScamInfo, type=InfoBarExtensions.EXTENSION_LIST)
+
+	def getOSname(self):
+		return _("OScam/Ncam Info")
+
+	def getOScamInfo(self):
+		if BoxInfo.getItem("OScamInstalled") or BoxInfo.getItem("NCamInstalled"):
+			return [((boundFunction(self.getOSname), boundFunction(self.openOScamInfo), lambda: True), None)] or []
+		else:
+			return []
 
 	def openSoftcamSetup(self):
 		from Screens.SoftcamSetup import SoftcamSetup
@@ -2464,6 +2486,10 @@ class InfoBarExtensions:
 	def extensionCallback(self, answer):
 		if answer is not None:
 			answer[1][1]()
+
+	def openOScamInfo(self):
+		from Screens.OScamInfo import OscamInfoMenu
+		self.session.open(OscamInfoMenu)
 
 
 from Tools.BoundFunction import boundFunction
@@ -3335,6 +3361,8 @@ class InfoBarCueSheetSupport:
 	CUT_TYPE_OUT = 1
 	CUT_TYPE_MARK = 2
 	CUT_TYPE_LAST = 3
+	CUT_TYPE_START = 4
+	CUT_TYPE_END = 5
 
 	ENABLE_RESUME_SUPPORT = False
 
@@ -3877,3 +3905,39 @@ class InfoBarHDMI:
 				self.session.nav.playService(slist.servicelist.getCurrent())
 			else:
 				self.session.nav.playService(self.cur_service)
+
+
+class InfoBarHDMI2:
+	def __init__(self):
+		self.hdmi_enabled_input = False
+		if BoxInfo.getItem("DMHDMI") or BoxInfo.getItem("HasHDMIin"):
+			if not self.hdmi_enabled_input:
+				self.addExtension((self.getHDMIInputScreen, self.HDMIInput, lambda: True), "green")
+
+	def getHDMIInputScreen(self):
+		if not self.hdmi_enabled_input:
+			return _("Switch to HDMI-IN mode")
+		else:
+			return _("Switch off HDMI-IN mode")
+
+	def HDMIInput(self):
+			f = open("/proc/stb/hdmi-rx/0/hdmi_rx_monitor", "r")
+			check = f.read()
+			f.close()
+			if check.startswith("off"):
+				f = open("/proc/stb/audio/hdmi_rx_monitor", "w")
+				f.write("on")
+				f.close()
+				f = open("/proc/stb/hdmi-rx/0/hdmi_rx_monitor", "w")
+				f.write("on")
+				f.close()
+				self.hdmi_enabled_input = True
+			else:
+				f = open("/proc/stb/audio/hdmi_rx_monitor", "w")
+				f.write("off")
+				f.close()
+				f = open("/proc/stb/hdmi-rx/0/hdmi_rx_monitor", "w")
+				f.write("off")
+				f.close()
+				self.hdmi_enabled_input = False
+

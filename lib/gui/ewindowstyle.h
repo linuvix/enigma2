@@ -6,6 +6,7 @@ class eSize;
 class gFont;
 
 #include <lib/base/object.h>
+#include <vector>
 
 class eWindowStyle_ENUMS
 {
@@ -50,6 +51,9 @@ public:
 	virtual int drawFrameRadius(gPainter &painter, const eRect &frame, int radius, uint8_t edges) = 0;
 	virtual RESULT getFont(int what, ePtr<gFont> &font) = 0;
 	virtual gRGB getColor(int what) = 0;
+
+	virtual void setGradient(int what, const std::vector<gRGB> &colors, uint8_t direction, bool alphablend) {}
+	virtual bool getGradient(int what, std::vector<gRGB> &colors, uint8_t &direction, bool &alphablend) { return false; }
 #endif
 	virtual ~eWindowStyle() = 0;
 };

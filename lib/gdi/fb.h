@@ -22,9 +22,6 @@ class fbClass
 	int m_manual_blit;
 	int m_number_of_pages;
 	int m_phys_mem;
-	int m_phys_mem_base;
-	unsigned char *m_lfb_base;
-	int m_available_total;
 #ifdef SWIG
 	fbClass(const char *fb=FB_DEV);
 	~fbClass();
@@ -32,6 +29,11 @@ public:
 #else
 public:
 	unsigned char *lfb;
+#ifdef CONFIG_ION
+	int m_accel_fd;
+	unsigned long m_accel_phys_addr;
+	unsigned long getAccelPhysAddr() { return m_accel_phys_addr; }
+#endif
 	void enableManualBlit();
 	void disableManualBlit();
 	int showConsole(int state);
@@ -43,11 +45,25 @@ public:
 
 	unsigned long getPhysAddr() { return m_phys_mem; }
 
+	// Pans the framebuffer's visible window. `off` is in SCANLINES, not
+	// bytes: it goes straight into fb_var_screeninfo.yoffset for
+	// FBIOPAN_DISPLAY (see fb.cpp), and the kernel converts to a byte
+	// offset internally. DreamboxWindowProvider::presentPixmap() relies on
+	// this - page N's scanout line offset is N * height (not N *
+	// Stride()*height).
 	int setOffset(int off);
 	int waitVSync();
 	void blit();
 	unsigned int Stride() { return stride; }
 	fb_cmap *CMAP() { return &cmap; }
+
+	// Callback invoked whenever the framebuffer lock state changes (see
+	// lock()/unlock() in fb.cpp). gEGLDC registers its own
+	// onFramebufferLockChanged here so it can hide/restore the OSD layer
+	// while ofgwrite is flashing (see gegldc.cpp's initEGL()/cleanupEGL()
+	// and m_lock_cleared). NULL by default; backends that don't need
+	// notification leave it alone.
+	static void (*lockChanged)(bool locked);
 
 	fbClass(const char *fb=FB_DEV);
 	~fbClass();

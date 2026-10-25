@@ -9,13 +9,19 @@ dist_install_DATA = \
 	andale.ttf \
 	DejaVuSans.ttf \
 	lcd.ttf \
-	md_khmurabi_10.ttf \
-	nmsbd.ttf \
-	LiberationSans-Bold.ttf \
 	LiberationSans-BoldItalic.ttf \
+	LiberationSans-Bold.ttf \
 	LiberationSans-Italic.ttf \
 	LiberationSans-Regular.ttf \
-	wqy-microhei.ttc
+	md_khmurabi_10.ttf \
+	nmsbd.ttf \
+	NotoNaskhArabic-Regular.ttf \
+	Roboto-BlackItalic.ttf \
+	Roboto-Black.ttf \
+	Roboto-BoldItalic.ttf \
+	Roboto-Bold.ttf \
+	wqy-microhei.ttc \
+	enigma2icons.ttf
 
 install-data-hook:
 	cd $(DESTDIR)$(datadir)/fonts && \

@@ -10,14 +10,14 @@ if [ -d /home/root ]; then
 fi
 
 # any debuglevel passed?
-if [ -z $ENIGMA_DEBUG_LVL ]; then
+if [ -z "$ENIGMA_DEBUG_LVL" ]; then
 	DEBUG_LVL=3
 else
 	DEBUG_LVL=$ENIGMA_DEBUG_LVL
 fi
 
 # LC_ALL available?
-if [ -z $LC_ALL ]; then
+if [ -z "$LC_ALL" ]; then
 	export LC_ALL=en_GB.utf8
 fi
 
@@ -43,17 +43,23 @@ while : ; do
 
 	# start enigma
 	sync
-	if [ $DEBUG_LVL -lt 4 ]; then
+	if [ "$DEBUG_LVL" -lt 4 ]; then
 		LD_PRELOAD=$LIBS ENIGMA_DEBUG_LVL=$DEBUG_LVL @bindir@/enigma2
 	else
 		# remove old logfiles
-		keep=5;
-		for file in `ls -t /home/root/enigma.*.debuglog`; do let "keep--"; if [ "$keep" -lt "0" ]; then rm $file; fi; done
+		keep=5
+		find /home/root -maxdepth 1 -name 'enigma.*.debuglog' -type f -print0 2>/dev/null \
+			| xargs -0 ls -t 2>/dev/null \
+			| while IFS= read -r file; do
+				keep=$((keep - 1))
+				if [ "$keep" -lt 0 ]; then
+					rm -f -- "$file"
+				fi
+			done
 		# todays log file
 		file="/home/root/enigma.$(date +%Y%m%d).debuglog"
-		LD_PRELOAD=$LIBS ENIGMA_DEBUG_LVL=$DEBUG_LVL @bindir@/enigma2 >> $file 2>&1
+		LD_PRELOAD=$LIBS ENIGMA_DEBUG_LVL=$DEBUG_LVL @bindir@/enigma2 >> "$file" 2>&1
 	fi
-
 
 	# enigma2 exit codes:
 	#
@@ -64,6 +70,8 @@ while : ; do
 	#  5 - install new settings
 	#  6 - restart enigma in debug mode
 	#  7 - manufacturer reset
+	# 15 - clear cache
+	# 16 - recovery mode
 	# 42 - restart for unattended update
 	# 43 - restart for network restore
 	# 44 - restart for autobackup restore
@@ -84,14 +92,15 @@ while : ; do
 		4)
 			/sbin/rmmod lcd
 			/usr/sbin/fpupgrade --upgrade 2>&1 | tee /home/root/fpupgrade.log
-			sleep 1;
+			sleep 1
 			/sbin/rmmod fp
 			/sbin/modprobe fp
 			/sbin/reboot
 			;;
 		5)
-			if ! grep -q config.misc.RestartUI /etc/enigma2/settings; then
-				echo "config.misc.RestartUI=true" >>/etc/enigma2/settings
+			if [ -f /etc/enigma2/settings ] \
+			   && ! grep -q config.misc.RestartUI /etc/enigma2/settings 2>/dev/null; then
+				echo "config.misc.RestartUI=true" >> /etc/enigma2/settings
 			fi
 			;;
 		6)
@@ -99,6 +108,39 @@ while : ; do
 			;;
 		7)
 			rm -R /etc/enigma2
+			;;
+		15)
+			rm -fR /home/root/.cache/gstreamer-1.0
+			rm -f /tmp/.listen.camd.socket.ignore
+			dd if=/dev/zero of=/dev/fb0 bs=1M count=16 2>/dev/null
+			env -i \
+				HOME=/home/root \
+				USER=root \
+				PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+				MESA_EXTENSION_OVERRIDE='-GL_EXT_discard_framebuffer' \
+				sync
+			ulimit -n 16384 2>/dev/null || ulimit -n 8192 2>/dev/null
+			echo 3 > /proc/sys/vm/drop_caches
+			/usr/bin/kodi --standalone > /tmp/kodi-standalone.log 2>&1
+			ret=$?
+			echo "kodi exit code: $ret" >> /tmp/kodi-standalone.log
+			;;
+		16)
+			stbcheck=$(cat /proc/stb/info/model)
+			if [ "$stbcheck" = "one" ] || [ "$stbcheck" = "two" ]; then
+				/usr/sbin/to-the-rescue
+			fi
+			if [ -e /dev/block/by-name/flag ]; then
+				echo -n "0" > /dev/block/by-name/flag
+			elif [ -e /dev/block/by-name/bootoptions ]; then
+				mkdir -p /tmp/bootoptions
+				mount /dev/block/by-name/bootoptions /tmp/bootoptions
+				cp -f /tmp/bootoptions/STARTUP_RECOVERY /tmp/bootoptions/STARTUP_ONCE
+			else
+				echo "rescue" > /proc/stb/fp/boot_mode
+			fi
+			[ -e /etc/enigma2/.deep ] && rm /etc/enigma2/.deep
+			/sbin/reboot
 			;;
 		42)
 			# bind the console (when available)
@@ -111,18 +153,19 @@ while : ; do
 				opkg update busybox 2>&1 | tee -a /home/root/opkgupgrade.log
 			fi
 			# update all other packages installed on the rootfs
-			while [ $currupd -gt 0 -a $currupd -ne $prevupd ]; do
+			while [ "$currupd" -gt 0 ] && [ "$currupd" -ne "$prevupd" ]; do
 				opkg upgrade 2>&1 | tee -a /home/root/opkgupgrade.log
 				prevupd=$currupd
-				currupd=`opkg list-upgradable | wc -l`
+				currupd=$(opkg list-upgradable | wc -l)
 				echo "===> $currupd PACKAGE(S) REMAINING" >> /home/root/opkgupgrade.log
 			done
 			# and remaining install destinations
+			DESTS=""
 			df -P | grep -v "tmpfs " | awk '{print $6}' | tail -n +3 > /tmp/upgrade_mountpoints.txt
-			while read line; do
-				if [  -f $line/var/lib/opkg/status ]; then
-				DESTS=$DESTS" --add-dest "$line":"$line
-			fi
+			while read -r line; do
+				if [ -f "$line/var/lib/opkg/status" ]; then
+					DESTS="$DESTS --add-dest $line:$line"
+				fi
 			done < /tmp/upgrade_mountpoints.txt
 			if [ "$DESTS" != "" ]; then
 				opkg upgrade $DESTS 2>&1 | tee -a /home/root/opkgupgrade.log
