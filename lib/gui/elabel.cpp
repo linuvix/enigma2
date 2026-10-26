@@ -110,8 +110,9 @@ int eLabel::event(int event, void *data, void *data2)
 			if (!m_nowrap)
 				flags |= gPainter::RT_WRAP;
 
-			// FIX: also blend when widget has a gradient, so text renders
-			// against the actual gradient backdrop instead of flat color.
+			/* When a gradient background is set, blend the text over it
+			   instead of over the flat background colour, otherwise the
+			   gradient is hidden behind a solid rectangle. */
 			if (isGradientSet() || m_blend)
 				flags |= gPainter::RT_BLEND;
 
