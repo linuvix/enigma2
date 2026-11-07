@@ -4,6 +4,65 @@ from Components.RcModel import rc_model
 
 keyBindings = {}
 
+# --- OpenATV Compat: Key Aliases ---
+# OpenATV plugins use "keyDown", "keyUp", etc.  OpenPLi uses "down", "up".
+#
+# IMPORTANT: This table is STRICTLY UNIDIRECTIONAL.
+#   key  = OpenATV spelling (or legacy/alternate spelling)
+#   value = OpenPLi canonical spelling
+#
+# Do NOT add the reverse mapping ("down": "keyDown").  Doing so turns the
+# alias relation into a symmetric set and causes two different spellings
+# to resolve to overlapping candidate sets, which poisons keyBindings and
+# makes the C++ eActionMap dispatch the wrong action into the wrong
+# context (this was the cause of the bcm_accel crash).
+#
+# Do NOT chain aliases (A->B, B->C).  Resolution is one hop only.
+ACTION_ALIASES = {
+	# Navigation / transport
+	"keyUp": "up",
+	"keyDown": "down",
+	"keyLeft": "left",
+	"keyRight": "right",
+	"keyOK": "ok",
+	"keyMenu": "menu",
+	"keyExit": "exit",
+	"keyInfo": "info",
+	"keyBack": "back",
+	"keyChannelUp": "channelUp",
+	"keyChannelDown": "channelDown",
+	"keyVolumeUp": "volumeUp",
+	"keyVolumeDown": "volumeDown",
+	"keyRed": "red",
+	"keyGreen": "green",
+	"keyYellow": "yellow",
+	"keyBlue": "blue",
+	"keyPlay": "play",
+	"keyPause": "pause",
+	"keyStop": "stop",
+	"keyRecord": "record",
+	"keyFastForward": "fastforward",
+	"keyRewind": "rewind",
+
+	# Uppercase variants used by some OpenATV plugins / CockpitActions.
+	"OK": "ok",
+	"EXIT": "exit",
+	"CANCEL": "cancel",
+	"SAVE": "save",
+	"INFO": "info",
+	"INFOS": "info",
+	"MENU": "menu",
+	"MENUS": "menu",
+
+	# OpenATV SmartSeek / Cockpit action names.
+	"CHANNELUP": "channelUp",
+	"CHANNELDOWN": "channelDown",
+
+	# OpenATV setup file-picker action name -> OpenPLi "select".
+	"file": "select",
+}
+# --- End OpenATV Compat ---
+
 keyDescriptions = [{  # id=0 - dmm0 remote directory, DM8000.
 	# However, the dmm0 rcpositions.xml file should define
 	# an <rc id=0 /> element, but it does not, it only has
@@ -68,12 +127,6 @@ keyDescriptions = [{  # id=0 - dmm0 remote directory, DM8000.
 	KEYIDS["KEY_VOLUMEUP"]: ("VOL+",),
 	KEYIDS["KEY_YELLOW"]: ("YELLOW",)
 }, {  # id=1 - dmm0 remote directory, other than DM8000.
-	# However, the dmm0 rcpositions.xml file should define
-	# an <rc id=1 /> element, but it does not, it only has
-	# an <rc id=2 /> element.
-	#
-	# The rcpositions.xml file defines <button/> elements,
-	# but they do not appear to emit codes.
 	KEYIDS["BTN_0"]: ("UP", "fp"),
 	KEYIDS["BTN_1"]: ("DOWN", "fp"),
 	KEYIDS["KEY_0"]: ("0",),
@@ -216,7 +269,6 @@ keyDescriptions = [{  # id=0 - dmm0 remote directory, DM8000.
 	KEYIDS["KEY_TV2"]: ("TV2",),
 	KEYIDS["KEY_UP"]: ("UP",),
 	KEYIDS["KEY_VIDEO"]: ("VIDEO",),
-	# KEYIDS["KEY_VMODE"]: ("VMODE",),  # This value is deprecated use KEY_SWITCHVIDEOMODE instead.
 	KEYIDS["KEY_VOD"]: ("VOD",),
 	KEYIDS["KEY_VOLUMEDOWN"]: ("VOL-",),
 	KEYIDS["KEY_VOLUMEUP"]: ("VOL+",),
@@ -224,11 +276,6 @@ keyDescriptions = [{  # id=0 - dmm0 remote directory, DM8000.
 	KEYIDS["KEY_YELLOW"]: ("YELLOW",),
 	KEYIDS["KEY_ZOOM"]: ("ZOOM",)
 }, {  # id=3 - XP1000.
-	# The xp1000/rcpositions file defines PLAY and PAUSE
-	# at the same location where it should just define
-	# PLAYPAUSE there. It has similar overlayed incorrect
-	# definitions for play & pause rather than play/pause
-	# in remote.html.
 	KEYIDS["BTN_0"]: ("UP", "fp"),
 	KEYIDS["BTN_1"]: ("DOWN", "fp"),
 	KEYIDS["KEY_0"]: ("0",),
@@ -278,15 +325,10 @@ keyDescriptions = [{  # id=0 - dmm0 remote directory, DM8000.
 	KEYIDS["KEY_TV"]: ("TV",),
 	KEYIDS["KEY_UP"]: ("UP",),
 	KEYIDS["KEY_VIDEO"]: ("PVR",),
-	# KEYIDS["KEY_VMODE"]: ("VMODE",),  # This value is deprecated use KEY_SWITCHVIDEOMODE instead.
 	KEYIDS["KEY_VOLUMEDOWN"]: ("VOL-",),
 	KEYIDS["KEY_VOLUMEUP"]: ("VOL+",),
 	KEYIDS["KEY_YELLOW"]: ("YELLOW",)
 }, {  # id=4 - Formuler F1/F3.
-	# The formuler1 rcpositions file seems to define
-	# the FF and REW keys as FASTFORWARD and KEY_REWIND,
-	# but the remote.xml file issues KEY_PREVIOUSSONG
-	# and KEY_NEXTSONG.
 	KEYIDS["BTN_0"]: ("UP", "fp"),
 	KEYIDS["BTN_1"]: ("DOWN", "fp"),
 	KEYIDS["KEY_0"]: ("0",),
@@ -422,17 +464,37 @@ labels = {  # This is not currently used anywhere. It is just present to populat
 }
 
 
+def canonicalAction(action):
+	"""
+	Map an incoming action name to its canonical OpenPLi spelling.
+
+	Resolution is strictly one hop: if 'action' is an alias key, return
+	its target; otherwise return 'action' unchanged.  There is NO reverse
+	lookup, because that would make the alias relation symmetric and
+	cause two spellings to collide inside eActionMap.
+	"""
+	return ACTION_ALIASES.get(action, action)
+
+
 def addKeyBinding(domain, key, context, action, flags):
-	keyBindings.setdefault((context, action), []).append((key, domain, flags))
+	"""
+	Register a key binding under its canonical action name only.
+
+	OpenATV spellings ("keyDown") are normalised to the OpenPLi canonical
+	spelling ("down") before storage, so a single binding exists per
+	(context, action) pair regardless of which spelling the caller used.
+	"""
+	keyBindings.setdefault((context, canonicalAction(action)), []).append((key, domain, flags))
 
 
 def removeKeyBinding(key, context, action, wild=True):
 	if wild and action == "*":
-		for ctx, action in keyBindings.keys():
+		for ctx, ctx_action in list(keyBindings.keys()):
 			if ctx == context:
-				removeKeyBinding(key, context, action, False)
+				removeKeyBinding(key, context, ctx_action, False)
 		return
-	contextAction = (context, action)
+
+	contextAction = (context, canonicalAction(action))
 	if contextAction in keyBindings:
 		bind = [x for x in keyBindings[contextAction] if x[0] != key]
 		if bind:
@@ -440,15 +502,19 @@ def removeKeyBinding(key, context, action, wild=True):
 		else:
 			del keyBindings[contextAction]
 
-# Returns a list of (key, flags) for a specified action.
-#
-
 
 def queryKeyBinding(context, action):
-	if (context, action) in keyBindings:
-		return [(x[0], x[2]) for x in keyBindings[(context, action)]]
-	else:
-		return []
+	"""
+	Return a list of (key, flags) for the given (context, action).
+
+	The lookup normalises 'action' to its canonical spelling, so a caller
+	asking for "keyDown" finds a binding registered as "down" and vice
+	versa (the binding itself is always stored canonically).
+	"""
+	binding = keyBindings.get((context, canonicalAction(action)))
+	if binding:
+		return [(x[0], x[2]) for x in binding]
+	return []
 
 
 def getKeyDescription(key):
@@ -456,7 +522,6 @@ def getKeyDescription(key):
 		idx = config.misc.rcused.value
 	else:
 		rcType = config.plugins.remotecontroltype.rctype.value
-		# rcType = config.misc.inputdevices.rcType.value
 		if rcType == 14:  # XP1000
 			idx = 3
 		elif rcType == 18:  # F1
@@ -467,15 +532,19 @@ def getKeyDescription(key):
 
 
 def getKeyBindingKeys(filterfn=lambda key: True):
-	return filter(filterfn, keyBindings)
-
-# Remove all entries of domain "domain".
-#
+	# Python 3 returns a lazy filter object; OpenATV callers expect a
+	# subscriptable / len()-able collection, so materialise it.
+	return list(filter(filterfn, keyBindings))
 
 
 def removeKeyBindings(domain):
-	for x in keyBindings:
-		keyBindings[x] = [e for e in keyBindings[x] if e[1] != domain]
+	# Snapshot the keys so we can safely delete entries while iterating.
+	for contextAction in list(keyBindings.keys()):
+		remaining = [e for e in keyBindings[contextAction] if e[1] != domain]
+		if remaining:
+			keyBindings[contextAction] = remaining
+		else:
+			del keyBindings[contextAction]
 
 
 def getFpAndKbdKeys():  # used by HelpMenuList

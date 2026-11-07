@@ -48,8 +48,9 @@ class StreamService(Source):
 		self.__service = self.navcore.recordService(self.ref)
 		self.navcore.record_event.append(self.recordEvent)
 		if self.__service is not None:
-			if self.__service.__deref__() not in StreamServiceList:
-				StreamServiceList.append(self.__service.__deref__())
+			# NOTE: don't use __deref__() (removed in modern SWIG); store the wrapper itself.
+			if self.__service not in StreamServiceList:
+				StreamServiceList.append(self.__service)
 			self.__service.prepareStreaming()
 			self.__service.start()
 
@@ -57,8 +58,9 @@ class StreamService(Source):
 		print("[StreamService] execEnd", self.ref.toString())
 		self.navcore.record_event.remove(self.recordEvent)
 		if self.__service is not None:
-			if self.__service.__deref__() in StreamServiceList:
-				StreamServiceList.remove(self.__service.__deref__())
+			# NOTE: don't use __deref__() (removed in modern SWIG); store the wrapper itself.
+			if self.__service in StreamServiceList:
+				StreamServiceList.remove(self.__service)
 			self.navcore.stopRecordService(self.__service)
 			self.__service = None
 			self.ref = None

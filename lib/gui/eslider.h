@@ -2,13 +2,14 @@
 #define __lib_gui_eslider_h
 
 #include <lib/gui/ewidget.h>
+#include <vector>
 
 class eSlider: public eWidget
 {
 public:
 	eSlider(eWidget *parent);
 	void setValue(int val);
-	void setStartEnd(int start, int end);
+	void setStartEnd(int start, int end, bool pixel = false);
 	void setRange(int min, int max);
 	enum { orHorizontal, orVertical };
 	void setOrientation(int orientation, int swapped = 0);
@@ -24,6 +25,13 @@ public:
 	void setSliderBorderWidth(int pixel);
 	void setSliderBorderColor(const gRGB &color);
 	void setSliderForegroundColor(const gRGB &color);
+
+	// gradient API
+	void setForegroundGradient(const gRGB &startcolor, const gRGB &midcolor, const gRGB &endcolor, uint8_t direction, bool alphablend, bool fullColor = false);
+	void setForegroundGradient(const std::vector<gRGB> &colors, uint8_t direction, bool alphablend, bool fullColor = false);
+	void setBackgroundGradient(const gRGB &startcolor, const gRGB &midcolor, const gRGB &endcolor, uint8_t direction, bool alphablend);
+	void setBackgroundGradient(const std::vector<gRGB> &colors, uint8_t direction, bool alphablend);
+
 protected:
 	int event(int event, void *data=0, void *data2=0);
 private:
@@ -33,12 +41,26 @@ private:
 	};
 	bool m_have_border_color, m_have_foreground_color, m_have_background_color;
 	bool m_have_sliderborder_color, m_have_sliderforeground_color, m_have_sliderborder_width;
+	bool m_pixel_mode = false;
 	int m_min, m_max, m_value, m_start, m_orientation, m_orientation_swapped, m_border_width, m_sliderborder_width;
 	ePtr<gPixmap> m_pixmap, m_backgroundpixmap;
 
 	gRegion m_currently_filled;
 	gRGB m_border_color, m_foreground_color, m_background_color;
 	gRGB m_sliderborder_color, m_sliderforeground_color;
+
+	// background gradient state
+	bool m_background_gradient_set = false;
+	bool m_background_gradient_alphablend = false;
+	uint8_t m_background_gradient_direction = 0;
+	std::vector<gRGB> m_background_gradient_colors;
+
+	// foreground (filled portion) gradient state
+	bool m_foreground_gradient_set = false;
+	bool m_foreground_gradient_alphablend = false;
+	bool m_foreground_gradient_fullcolor = false;
+	uint8_t m_foreground_gradient_direction = 0;
+	std::vector<gRGB> m_foreground_gradient_colors;
 };
 
 #endif

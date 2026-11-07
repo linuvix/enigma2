@@ -139,7 +139,10 @@ class RecordTimerEntry(timer.TimerEntry):
 	@staticmethod
 	def stopTryQuitMainloop():
 		print("RecordTimer.stopTryQuitMainloop")
-		NavigationInstance.instance.record_event.remove(RecordTimerEntry.staticGotRecordEvent)
+		try:
+			NavigationInstance.instance.record_event.remove(RecordTimerEntry.staticGotRecordEvent)
+		except ValueError:
+			pass
 		RecordTimerEntry.receiveRecordEvents = False
 
 	@staticmethod
@@ -775,8 +778,9 @@ class RecordTimerEntry(timer.TimerEntry):
 			self.log(15, "record time changed, start prepare is now: %s" % ctime(self.start_prepare))
 
 	def gotRecordEvent(self, record, event):
-		# TODO: this is not working (never true), please fix. (comparing two swig wrapped ePtrs)
-		if self.__record_service.__deref__() != record.__deref__():
+		# NOTE: comparing SWIG-wrapped ePtr objects. On modern SWIG __deref__() no
+		# longer exists; identity comparison on the wrapper objects is correct.
+		if self.__record_service is not record and self.__record_service != record:
 			return
 		self.log(16, "record event %d" % event)
 		if event == iRecordableService.evRecordWriteError:

@@ -136,34 +136,58 @@ uint32_t *createGradientBuffer2(int graSize, const gRGB &startColor, const gRGB 
 	return gradientBuf;
 }
 
-static void blendPixelRounded(uint32_t *dst, const uint32_t *src, const double alpha)
+// Correct ARGB "over" composite, with coverage-based AA.
+//
+// Layout assumptions (match gPixmap / createGradientBuffer2/3, standard ARGB):
+//   *src, *dst, result  are  0xAARRGGBB  (A in bits 24-31, 0xFF = opaque, 0x00 = transparent)
+//
+// Formula:
+//   effA = srcA * coverage
+//   out  = src * effA + dst * (1 - effA)   (straight alpha "over")
+//   outA = effA + dstA * (1 - effA)
+static void blendPixelRounded(uint32_t *dst, const uint32_t *src, const double coverage)
 {
-	if (!((*src) & 0xFF000000))
+	if (!(*src & 0xFF000000))   // source alpha byte == 0 -> fully transparent, skip
 		return;
 
-	uint8_t r = (*src >> 24) & 0xFF;
-	uint8_t g = (*src >> 16) & 0xFF;
-	uint8_t b = (*src >> 8) & 0xFF;
-	uint8_t a = (*src >> 0) & 0xFF;
+	if (coverage >= 1.0)        // fully covered -> straight copy (hot path)
+	{
+		*dst = *src;
+		return;
+	}
+	if (coverage <= 0.0)        // no coverage -> skip
+		return;
 
-	// Apply alpha blending
-	uint8_t newR = r * alpha;
-	uint8_t newG = g * alpha;
-	uint8_t newB = b * alpha;
-	uint8_t newA = a * alpha;
+	const uint32_t srcVal = *src;
+	const uint32_t sa = (srcVal >> 24) & 0xFF;
+	const uint32_t sr = (srcVal >> 16) & 0xFF;
+	const uint32_t sg = (srcVal >>  8) & 0xFF;
+	const uint32_t sb = (srcVal >>  0) & 0xFF;
 
-	// Combine the new color with the existing pixel color using alpha blending
-	uint8_t oldR = (*dst >> 24) & 0xFF;
-	uint8_t oldG = (*dst >> 16) & 0xFF;
-	uint8_t oldB = (*dst >> 8) & 0xFF;
-	uint8_t oldA = (*dst >> 0) & 0xFF;
+	const uint32_t dstVal = *dst;
+	const uint32_t da = (dstVal >> 24) & 0xFF;
+	const uint32_t dr = (dstVal >> 16) & 0xFF;
+	const uint32_t dg = (dstVal >>  8) & 0xFF;
+	const uint32_t db = (dstVal >>  0) & 0xFF;
 
-	uint8_t finalR = newR + oldR * (1 - alpha);
-	uint8_t finalG = newG + oldG * (1 - alpha);
-	uint8_t finalB = newB + oldB * (1 - alpha);
-	uint8_t finalA = newA + oldA * (1 - alpha);
+	const uint32_t effA = (uint32_t)(sa * coverage + 0.5);   // 0..255
+	if (effA == 0)
+		return;
 
-	*dst = (finalR << 24) | (finalG << 16) | (finalB << 8) | finalA;
+	if (effA == 255)            // fully covered (implies sa==255, coverage>=~0.998)
+	{
+		*dst = (sa << 24) | (sr << 16) | (sg << 8) | sb;   // == *src, but explicit
+		return;
+	}
+
+	const uint32_t invA = 255 - effA;
+
+	const uint32_t outR = (sr * effA + dr * invA + 127) / 255;
+	const uint32_t outG = (sg * effA + dg * invA + 127) / 255;
+	const uint32_t outB = (sb * effA + db * invA + 127) / 255;
+	const uint32_t outA =  effA + (da * invA + 127) / 255;
+
+	*dst = (outA << 24) | (outR << 16) | (outG << 8) | outB;
 }
 
 void drawAngleTl(gUnmanagedSurface *surface, const uint32_t *src, const eRect &area, uint8_t direction, const eRect &cornerRect, const CornerData &cornerData)

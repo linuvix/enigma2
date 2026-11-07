@@ -362,3 +362,6 @@ class ServiceInfoBar(GUIAddon):
 		self.skinAttributes = attribs
 		self.l.setFont(0, self.font)
 		return GUIAddon.applySkin(self, desktop, parent)
+# --- OpenATV compat: alias for skins expecting COCServiceInfoBar ---
+COCServiceInfoBar = ServiceInfoBar
+# --- end OpenATV compat ---

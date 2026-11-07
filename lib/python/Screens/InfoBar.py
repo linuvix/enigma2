@@ -23,7 +23,7 @@ from Screens.InfoBarGenerics import InfoBarShowHide, \
 	InfoBarServiceNotifications, InfoBarPVRState, InfoBarCueSheetSupport, InfoBarBuffer, \
 	InfoBarSummarySupport, InfoBarMoviePlayerSummarySupport, InfoBarTimeshiftState, InfoBarTeletextPlugin, InfoBarExtensions, \
 	InfoBarSubtitleSupport, InfoBarPiP, InfoBarPlugins, InfoBarServiceErrorPopupSupport, InfoBarJobman, InfoBarPowersaver, \
-	InfoBarHDMI, resumePointsInstance
+	InfoBarHDMI, InfoBarHDMI2, resumePointsInstance
 from Screens.Hotkey import InfoBarHotkey
 
 profile("LOAD:InitBar_Components")
@@ -41,13 +41,17 @@ class InfoBar(InfoBarBase, InfoBarShowHide,
 	InfoBarSubserviceSelection, InfoBarTimeshift, InfoBarSeek, InfoBarCueSheetSupport, InfoBarBuffer,
 	InfoBarSummarySupport, InfoBarTimeshiftState, InfoBarTeletextPlugin, InfoBarExtensions,
 	InfoBarPiP, InfoBarPlugins, InfoBarSubtitleSupport, InfoBarServiceErrorPopupSupport, InfoBarJobman, InfoBarPowersaver,
-	InfoBarHDMI, InfoBarHotkey, Screen):
+	InfoBarHDMI, InfoBarHDMI2, InfoBarHotkey, Screen):
 
 	ALLOW_SUSPEND = True
 	instance = None
 
 	def __init__(self, session):
 		Screen.__init__(self, session)
+
+		# Compatibility method for plugins expecting showMainMenu
+		self.showMainMenu = self.mainMenu
+
 		self["actions"] = HelpableActionMap(self, ["InfobarActions"],
 			{
 				"showMovies": (self.showMovies, _("Play recorded movies...")),
@@ -56,6 +60,10 @@ class InfoBar(InfoBarBase, InfoBarShowHide,
 				"toggleTvRadio": (self.toggleTvRadio, _("Toggle the tv and the radio player...")),
 			}, prio=2)
 
+		self["key_red"] = Label()
+		self["key_green"] = Label()
+		self["key_yellow"] = Label()
+		self["key_blue"] = Label()
 		self.radioTV = 0
 		self.allowPiP = True
 
@@ -66,7 +74,7 @@ class InfoBar(InfoBarBase, InfoBarShowHide,
 				InfoBarAdditionalInfo, InfoBarNotifications, InfoBarDish, InfoBarSubserviceSelection, InfoBarBuffer, \
 				InfoBarTimeshift, InfoBarSeek, InfoBarCueSheetSupport, InfoBarSummarySupport, InfoBarTimeshiftState, \
 				InfoBarTeletextPlugin, InfoBarExtensions, InfoBarPiP, InfoBarSubtitleSupport, InfoBarJobman, InfoBarPowersaver, \
-				InfoBarPlugins, InfoBarServiceErrorPopupSupport, InfoBarHotkey:
+				InfoBarHDMI2, InfoBarPlugins, InfoBarServiceErrorPopupSupport, InfoBarHotkey:
 			x.__init__(self)
 
 		self.helpList.append((self["actions"], "InfobarActions", [("showMovies", _("Watch recordings..."))]))
@@ -157,7 +165,7 @@ class InfoBar(InfoBarBase, InfoBarShowHide,
 class MoviePlayer(InfoBarBase, InfoBarShowHide, InfoBarMenu, InfoBarSeek, InfoBarShowMovies, InfoBarInstantRecord, InfoBarVmodeButton,
 		InfoBarAudioSelection, HelpableScreen, InfoBarNotifications, InfoBarServiceNotifications, InfoBarPVRState,
 		InfoBarCueSheetSupport, InfoBarMoviePlayerSummarySupport, InfoBarSubtitleSupport, Screen, InfoBarTeletextPlugin,
-		InfoBarServiceErrorPopupSupport, InfoBarExtensions, InfoBarPlugins, InfoBarPiP, InfoBarHDMI, InfoBarHotkey, InfoBarJobman):
+		InfoBarServiceErrorPopupSupport, InfoBarExtensions, InfoBarPlugins, InfoBarPiP, InfoBarHDMI, InfoBarHDMI2, InfoBarHotkey, InfoBarJobman):
 
 	ENABLE_RESUME_SUPPORT = True
 	ALLOW_SUSPEND = True
@@ -165,6 +173,9 @@ class MoviePlayer(InfoBarBase, InfoBarShowHide, InfoBarMenu, InfoBarSeek, InfoBa
 
 	def __init__(self, session, service, slist=None, lastservice=None, infobar=None):
 		Screen.__init__(self, session)
+
+		# Compatibility method for plugins expecting showMainMenu
+		self.showMainMenu = self.mainMenu
 
 		self["actions"] = HelpableActionMap(self, ["MoviePlayerActions"],
 			{
@@ -185,6 +196,9 @@ class MoviePlayer(InfoBarBase, InfoBarShowHide, InfoBarMenu, InfoBarSeek, InfoBa
 				"extensions": (self.showExtensionSelection, _("Show extensions...")),
 			}, 1) # lower priority
 
+		self["key_green"] = Label()
+		self["key_yellow"] = Label()
+		self["key_blue"] = Label()
 		self["state"] = Label()
 		self["speed"] = Label()
 		self["statusicon"] = MultiPixmap()
@@ -383,68 +397,78 @@ class MoviePlayer(InfoBarBase, InfoBarShowHide, InfoBarMenu, InfoBarSeek, InfoBa
 			self.handleLeave(config.usage.on_movie_eof.value)
 
 	def up(self):
-		if self.servicelist and self.servicelist.dopipzap:
-			if config.usage.oldstyle_zap_controls.value:
-				self.zapDown()
-			else:
-				self.switchChannelUp()
-		else:
-			self.showMovies()
+		# Check if servicelist exists and is the right type
+		if self.servicelist is not None:
+			if not isinstance(self.servicelist, str) and hasattr(self.servicelist, 'dopipzap') and self.servicelist.dopipzap:
+				if config.usage.oldstyle_zap_controls.value:
+					self.zapDown()
+				else:
+					self.switchChannelUp()
+				return
+		self.showMovies()
 
 	def down(self):
-		if self.servicelist and self.servicelist.dopipzap:
-			if config.usage.oldstyle_zap_controls.value:
-				self.zapUp()
-			else:
-				self.switchChannelDown()
-		else:
-			self.showMovies()
+		# Check if servicelist exists and is the right type
+		if self.servicelist is not None:
+			if not isinstance(self.servicelist, str) and hasattr(self.servicelist, 'dopipzap') and self.servicelist.dopipzap:
+				if config.usage.oldstyle_zap_controls.value:
+					self.zapUp()
+				else:
+					self.switchChannelDown()
+				return
+		self.showMovies()
 
 	def right(self):
-		if self.servicelist and self.servicelist.dopipzap:
-			if config.usage.oldstyle_zap_controls.value:
-				self.switchChannelDown()
-			else:
-				self.zapDown()
-		else:
-			InfoBarSeek.seekFwd(self)
+		# Check if servicelist exists and is the right type
+		if self.servicelist is not None:
+			if not isinstance(self.servicelist, str) and hasattr(self.servicelist, 'dopipzap') and self.servicelist.dopipzap:
+				if config.usage.oldstyle_zap_controls.value:
+					self.switchChannelDown()
+				else:
+					self.zapDown()
+				return
+		InfoBarSeek.seekFwd(self)
 
 	def left(self):
-		if self.servicelist and self.servicelist.dopipzap:
-			if config.usage.oldstyle_zap_controls.value:
-				self.switchChannelUp()
-			else:
-				self.zapUp()
-		else:
-			InfoBarSeek.seekBack(self)
+		# Check if servicelist exists and is the right type
+		if self.servicelist is not None:
+			if not isinstance(self.servicelist, str) and hasattr(self.servicelist, 'dopipzap') and self.servicelist.dopipzap:
+				if config.usage.oldstyle_zap_controls.value:
+					self.switchChannelUp()
+				else:
+					self.zapUp()
+				return
+		InfoBarSeek.seekBack(self)
 
 	def channelUp(self):
-		if config.usage.zap_with_ch_buttons.value and self.servicelist and self.servicelist.dopipzap:
-			self.zapDown()
-		else:
-			return 0
+		if config.usage.zap_with_ch_buttons.value and self.servicelist is not None:
+			if not isinstance(self.servicelist, str) and hasattr(self.servicelist, 'dopipzap') and self.servicelist.dopipzap:
+				self.zapDown()
+				return 1
+		return 0
 
 	def channelDown(self):
-		if config.usage.zap_with_ch_buttons.value and self.servicelist and self.servicelist.dopipzap:
-			self.zapUp()
-		else:
-			return 0
+		if config.usage.zap_with_ch_buttons.value and self.servicelist is not None:
+			if not isinstance(self.servicelist, str) and hasattr(self.servicelist, 'dopipzap') and self.servicelist.dopipzap:
+				self.zapUp()
+				return 1
+		return 0
 
 	def switchChannelDown(self):
-		if self.servicelist:
+		if self.servicelist is not None and not isinstance(self.servicelist, str):
 			if "keep" not in config.usage.servicelist_cursor_behavior.value:
 				self.servicelist.moveDown()
 			self.session.execDialog(self.servicelist)
 
 	def switchChannelUp(self):
-		if self.servicelist:
+		if self.servicelist is not None and not isinstance(self.servicelist, str):
 			if "keep" not in config.usage.servicelist_cursor_behavior.value:
 				self.servicelist.moveUp()
 			self.session.execDialog(self.servicelist)
 
 	def zapUp(self):
 		slist = self.servicelist
-		if slist:
+		if slist is not None and not isinstance(slist, str):
 			if slist.inBouquet():
 				prev = slist.getCurrentSelection()
 				if prev:
@@ -465,7 +489,7 @@ class MoviePlayer(InfoBarBase, InfoBarShowHide, InfoBarMenu, InfoBarSeek, InfoBa
 
 	def zapDown(self):
 		slist = self.servicelist
-		if slist:
+		if slist is not None and not isinstance(slist, str):
 			if slist.inBouquet():
 				prev = slist.getCurrentSelection()
 				if prev:
@@ -487,12 +511,12 @@ class MoviePlayer(InfoBarBase, InfoBarShowHide, InfoBarMenu, InfoBarSeek, InfoBa
 	def showPiP(self):
 		slist = self.servicelist
 		if self.session.pipshown:
-			if slist and slist.dopipzap:
+			if slist is not None and not isinstance(slist, str) and hasattr(slist, 'dopipzap') and slist.dopipzap:
 				slist.togglePipzap()
 			if self.session.pipshown:
 				del self.session.pip
 				self.session.pipshown = False
-		elif slist:
+		elif slist is not None and not isinstance(slist, str):
 			from Screens.PictureInPicture import PictureInPicture
 			self.session.pip = self.session.instantiateDialog(PictureInPicture)
 			self.session.pip.show()
