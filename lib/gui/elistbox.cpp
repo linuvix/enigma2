@@ -3,18 +3,27 @@
 #include <lib/gui/eslider.h>
 #include <lib/actions/action.h>
 
-int eListbox::defaultItemRadius[2] = {0,0};
+int eListbox::defaultItemRadius[2] = {0,0}; 
 int eListbox::defaultItemRadiusEdges[2] = {0,0};
 
 eListbox::eListbox(eWidget *parent) :
 	eWidget(parent), m_scrollbar_mode(showNever), m_prev_scrollbar_page(-1),
 	m_content_changed(false), m_enabled_wrap_around(false), m_scrollbar_width(10), m_scrollbar_height(10),
-	m_top(0), m_left(0), m_selected(0), m_itemheight(25), m_itemwidth(25), m_orientation(orVertical),
-	m_items_per_page(0), m_selection_enabled(1), m_native_keys_bound(false), m_scrollbar(nullptr)
+	m_top(0), m_left(0), m_max_columns(0), m_max_rows(0), m_selected(0), m_itemheight(25), m_itemwidth(25), m_orientation(orVertical),
+	m_items_per_page(0), m_items_per_page_with_partials(0), m_selection_enabled(1), m_native_keys_bound(false), m_scrollbar(nullptr)
 {
 	memset(static_cast<void*>(&m_style), 0, sizeof(m_style));
 	m_style.m_text_offset = ePoint(1,1);
 
+	// m_gradient_set[] has 4 entries, so clear all of them.
+	for (int x = 0; x < 4; x++)
+		m_style.m_gradient_set[x] = false;
+
+	// m_itemCornerRadius[] and m_itemCornerRadiusEdges[] only have 2 entries
+	// (index 0 = normal, index 1 = selected). The previous loop ran to 4 and
+	// called setItemCornerRadiusInternal(..., x) with x >= 2, which wrote out
+	// of bounds. GCC 16 correctly flagged this as
+	// -Werror=aggressive-loop-optimizations (undefined behaviour on iteration 2).
 	for (int x = 0; x < 2; x++)
 	{
 		if (eListbox::defaultItemRadius[x] && eListbox::defaultItemRadiusEdges[x])
@@ -36,7 +45,12 @@ eListbox::~eListbox()
 
 void eListbox::setOrientation(int orientation)
 {
-	m_orientation = orientation;
+	if (m_orientation != orientation)
+	{
+		m_orientation = orientation;
+		if (m_content)
+			recalcSize();
+	}
 }
 
 void eListbox::setScrollbarMode(int mode)
@@ -54,8 +68,7 @@ void eListbox::setScrollbarMode(int mode)
 	{
 		m_scrollbar = new eSlider(this);
 		m_scrollbar->hide();
-		m_scrollbar->setBorderWidth(1);
-		if (m_orientation == orVertical) {
+		if (m_orientation == orVertical || m_orientation == orGrid) {
 			m_scrollbar->setOrientation(eSlider::orVertical);
 		} else {
 			m_scrollbar->setOrientation(eSlider::orHorizontal);
@@ -63,7 +76,13 @@ void eListbox::setScrollbarMode(int mode)
 		m_scrollbar->setRange(0,100);
 		if (m_scrollbarbackgroundpixmap) m_scrollbar->setBackgroundPixmap(m_scrollbarbackgroundpixmap);
 		if (m_scrollbarpixmap) m_scrollbar->setPixmap(m_scrollbarpixmap);
-		if (m_style.m_sliderborder_color_set) m_scrollbar->setSliderBorderColor(m_style.m_sliderborder_color);
+		if (m_style.m_scrollbarforeground_color_set) m_scrollbar->setForegroundColor(m_style.m_scrollbarforeground_color);
+		if (m_style.m_scrollbarbackground_color_set) m_scrollbar->setBackgroundColor(m_style.m_scrollbarbackground_color);
+		if (m_style.m_scrollbarborder_width_set)
+			m_scrollbar->setBorderWidth(m_style.m_scrollbarborder_width);
+		else
+			m_scrollbar->setBorderWidth(1);
+		if (m_style.m_scrollbarborder_color_set) m_scrollbar->setBorderColor(m_style.m_scrollbarborder_color);
 	}
 }
 
@@ -77,6 +96,21 @@ void eListbox::setContent(iListboxContent *content)
 	m_content = content;
 	if (content)
 		m_content->setListbox(this);
+	// Re-apply skin values, because setListbox() just propagated the content's
+	// internal defaults (typically 25x25/orVertical) back onto us.
+	if (content)
+	{
+		if (m_itemwidth != 25 || m_itemheight != 25)
+		{
+			m_content->setItemWidth(m_itemwidth);
+			m_content->setItemHeight(m_itemheight);
+		}
+		if (m_orientation != orVertical)
+		{
+			m_content->setOrientation(m_orientation);
+		}
+		recalcSize();
+	}
 	entryReset();
 }
 
@@ -113,58 +147,101 @@ void eListbox::moveToEnd()
 	if (!m_content)
 		return;
 	/* move to last existing one ("end" is already invalid) */
-	m_content->cursorEnd(); m_content->cursorMove(-1);
-	/* current selection invisible? */
-	if (m_orientation == orVertical)
+	m_content->cursorEnd();
+	m_content->cursorMove(-1);
+	int last = m_content->cursorGet();
+
+	if (m_orientation == orGrid)
 	{
-		if (m_top + m_items_per_page <= m_content->cursorGet())
-		{
-			int rest = m_content->size() % m_items_per_page;
-			if (rest)
-				m_top = m_content->cursorGet() - rest + 1;
-			else
-				m_top = m_content->cursorGet() - m_items_per_page + 1;
-			if (m_top < 0)
-				m_top = 0;
-		}
+		// Align the grid so that the LAST ROW (not the last cell's
+		// residue) is at the bottom. Each page covers
+		// m_max_columns * m_max_rows cells.
+		int cells = m_max_columns * m_max_rows;
+		if (cells > 0)
+			m_top = (last / cells) * m_max_rows;
+		return;
 	}
-	else
+
+	if (m_orientation == orHorizontal)
 	{
-		if (m_left + m_items_per_page <= m_content->cursorGet())
+		if (m_left + m_items_per_page <= last)
 		{
-			int rest = m_content->size() % m_items_per_page;
-			if (rest)
-				m_left = m_content->cursorGet() - rest + 1;
-			else
-				m_left = m_content->cursorGet() - m_items_per_page + 1;
+			m_left = last - (last % m_items_per_page);
 			if (m_left < 0)
 				m_left = 0;
 		}
+		return;
+	}
+
+	// orVertical
+	if (m_items_per_page > 0 && m_top + m_items_per_page <= last)
+	{
+		m_top = last - (last % m_items_per_page);
+		if (m_top < 0)
+			m_top = 0;
 	}
 }
 
 void eListbox::moveSelection(long dir)
 {
 	long r_dir = dir;
+	// For compatability reasons we add this so to support current listbox actions in horizontal listboxes
+	if (m_orientation == orHorizontal) {
+		switch (dir) {
+			case moveUp:
+				r_dir = prevPage;
+				break;
+			case moveDown:
+				r_dir = nextPage;
+				break;
+			case pageUp:
+				r_dir = prevItem;
+				break;
+			case pageDown:
+				r_dir = nextItem;
+				break;
+		}
+	}
+
+	// Map moveLeft/moveRight per orientation
+	if (dir == moveLeft) {
+		r_dir = (m_orientation == orVertical) ? prevPage : prevItem;
+	} else if (dir == moveRight) {
+		r_dir = (m_orientation == orVertical) ? nextPage : nextItem;
+	}
+
+	// Map universal actions to the corresponding action for Horizontal and vertical eListbox
 	switch (dir) {
-		case moveUp:
+		case prevItemPage:
 			if (m_orientation == orHorizontal){
-				r_dir = pageUp;
-			}
-			break;
-		case moveDown:
-			if (m_orientation == orHorizontal){
-				r_dir = pageDown;
-			}
-			break;
-		case pageUp:
-			if (m_orientation == orHorizontal){
+				r_dir = prevPage;
+			} else if (m_orientation == orVertical) {
+				r_dir = prevItem;
+			} else {
 				r_dir = moveUp;
 			}
 			break;
-		case pageDown:
+		case nextItemPage:
 			if (m_orientation == orHorizontal){
+				r_dir = nextPage;
+			} else if (m_orientation == orVertical) {
+				r_dir = nextItem;
+			} else {
 				r_dir = moveDown;
+			}
+			break;
+		case prevPageItem:
+			if (m_orientation == orVertical){
+				r_dir = prevPage;
+			} else {
+				r_dir = prevItem;
+			}
+			break;
+		case nextPageItem:
+			if (m_orientation == orVertical){
+				r_dir = nextPage;
+			} else {
+				r_dir = nextItem;
 			}
 			break;
 	}
@@ -174,61 +251,301 @@ void eListbox::moveSelection(long dir)
 	/* if our list does not have one entry, don't do anything. */
 	if (!m_items_per_page)
 		return;
+
+	// Grid movement needs at least one column. A freshly-created listbox, or a
+	// listbox whose width is still 0, has m_max_columns == 0 - in that case
+	// every grid branch (which divides by m_max_columns) would crash with a
+	// SIGFPE. Fall back to the linear path until the widget is sized.
+	bool isGrid = m_orientation == orGrid && m_max_columns > 0;
 	/* we need the old top/sel to see what we have to redraw */
 	int oldtop = m_top;
 	int oldleft = m_left;
 	int oldsel = m_selected;
 	int prevsel = oldsel;
 	int newsel;
+	int oldRow = isGrid ? oldsel / m_max_columns : 0;
+	int oldColumn = isGrid ? oldsel % m_max_columns : 0;
 
 	switch (r_dir) {
 		case moveEnd:
+			if (isGrid)
+			{
+				// Walk forward while we stay on the same row. Then step
+				// back one so we end up on the last selectable cell of
+				// the current row (not one row up, which the previous
+				// fall-through into moveUp caused).
+				int saved = m_content->cursorGet();
+				int rowStart = oldsel - oldColumn;
+				int rowEnd = rowStart + m_max_columns;
+				if (rowEnd > m_content->size())
+					rowEnd = m_content->size();
+				int last = saved;
+				for (int i = saved + 1; i < rowEnd; ++i)
+				{
+					m_content->cursorSet(i);
+					if (m_content->currentCursorSelectable())
+						last = i;
+				}
+				m_content->cursorSet(last);
+				// Do NOT fall through to moveUp - that would move us one
+				// row up from where we just landed.
+				newsel = m_content->cursorGet();
+				break;
+			}
 			m_content->cursorEnd();
 			[[fallthrough]];
 		case moveUp:
-			do
+		case prevItem:
+			if (isGrid)
 			{
-				m_content->cursorMove(-1);
-				newsel = m_content->cursorGet();
-				if (newsel == prevsel) {  // cursorMove reached top and left cursor position the same. Must wrap around ?
-					if (m_enabled_wrap_around)
-					{
-						m_content->cursorEnd();
-						m_content->cursorMove(-1);
-						newsel = m_content->cursorGet();
-					}
-					else
-					{
-						m_content->cursorSet(oldsel);
-						break;
-					}
+				if (r_dir == moveUp)
+				{
+					int current = oldsel;
+					// Guard against pathological content where no cell is
+					// selectable - otherwise the do/while below spins forever.
+					int guard = 0;
+
+					do {
+						if (++guard > m_content->size())
+							break;
+
+						// Move to previous row in same column
+						current -= m_max_columns;
+
+						if (current < 0) {
+							// Wrap to bottom of same column if enabled
+							if (m_enabled_wrap_around) {
+								int lastRowStart = ((m_content->size() - 1) / m_max_columns) * m_max_columns;
+								current = lastRowStart + oldColumn;
+								// The last row may be shorter than the column index.
+								if (current >= m_content->size())
+									current = m_content->size() - 1;
+							} else {
+								m_content->cursorSet(oldsel);
+								break;
+							}
+						}
+
+						m_content->cursorSet(current);
+
+						if (!m_content->cursorValid()) {
+							if (m_enabled_wrap_around)
+								current = oldColumn;
+							else {
+								m_content->cursorSet(oldsel);
+								break;
+							}
+						}
+
+						// Exit loop if item is selectable
+						if (m_content->currentCursorSelectable())
+							break;
+
+					} while (current != oldsel);
+
+					// Final selection
+					newsel = m_content->cursorGet();
 				}
-				prevsel = newsel;
+				else
+				{
+					// Move left within the current row, wrapping to the row's last column if enabled
+					int rowStart = oldsel - oldColumn;
+					int rowEnd = rowStart + m_max_columns - 1;
+					if (rowEnd > m_content->size() - 1)
+						rowEnd = m_content->size() - 1;
+					int current = oldsel;
+
+					do
+					{
+						--current;
+						if (current < rowStart)
+						{
+							if (!m_enabled_wrap_around)
+							{
+								current = oldsel;
+								m_content->cursorSet(current);
+								break;
+							}
+							current = rowEnd;
+						}
+						m_content->cursorSet(current);
+					}
+					while (current != oldsel && !m_content->currentCursorSelectable());
+
+					newsel = m_content->cursorGet();
+				}
 			}
-			while (newsel != oldsel && !m_content->currentCursorSelectable());
+			else
+			{
+				do
+				{
+					m_content->cursorMove(-1);
+					newsel = m_content->cursorGet();
+					if (newsel == prevsel) {  // cursorMove reached top and left cursor position the same. Must wrap around ?
+						if (m_enabled_wrap_around)
+						{
+							m_content->cursorEnd();
+							m_content->cursorMove(-1);
+							newsel = m_content->cursorGet();
+						}
+						else
+						{
+							m_content->cursorSet(oldsel);
+							break;
+						}
+					}
+					prevsel = newsel;
+				}
+				while (newsel != oldsel && !m_content->currentCursorSelectable());
+			}
 			break;
 		case moveTop:
-			m_content->cursorHome();
+		case moveStart:
+			if (isGrid)
+			{
+				int newRow = oldRow;
+				do
+				{
+					m_content->cursorMove(-1);
+					newsel = m_content->cursorGet();
+					newRow = newsel / m_max_columns;
+					if (newRow != oldRow || !m_content->currentCursorSelectable())
+					{
+						m_content->cursorSet(prevsel);
+						break;
+					}
+					if (newsel == prevsel)
+					{
+						break;
+					}
+					prevsel = newsel;
+
+				} while (true);
+			}
+			else
+				m_content->cursorHome();
 			[[fallthrough]];
 		case justCheck:
 			if (m_content->cursorValid() && m_content->currentCursorSelectable())
 				break;
 			[[fallthrough]];
 		case moveDown:
-			do
+		case nextItem:
+			if (isGrid)
 			{
-				m_content->cursorMove(1);
-				if (!m_content->cursorValid()) { //cursorMove reached end and left cursor position past the list. Must wrap around ?
-					if (m_enabled_wrap_around)
-						m_content->cursorHome();
-					else
-						m_content->cursorSet(oldsel);
+				if (r_dir == moveDown)
+				{
+					int current = oldsel;
+					int guard = 0;
+
+					do {
+						if (++guard > m_content->size())
+							break;
+
+						current += m_max_columns;  // Move to next row in same column
+
+						if (current >= m_content->size()) {
+							// Past the end of the list.
+							if (!m_enabled_wrap_around) {
+								// No wrap: stay put. (The old code clamped to
+								// the last item, which is not "no wrap".)
+								m_content->cursorSet(oldsel);
+								break;
+							}
+							// Wrap to top of same column. If the last row is
+							// shorter than oldColumn, snap to the last cell so
+							// the user does not lose the current position.
+							int lastRowStart = ((m_content->size() - 1) / m_max_columns) * m_max_columns;
+							int sameCol = lastRowStart + oldColumn;
+							if (sameCol >= m_content->size())
+								sameCol = m_content->size() - 1;
+							// If we are already on the last available cell for
+							// this column, wrap to the first row.
+							if (current - m_max_columns == sameCol)
+								current = oldColumn;
+							else
+								current = sameCol;
+						}
+
+						m_content->cursorSet(current);
+
+						if (!m_content->cursorValid()) {
+							if (m_enabled_wrap_around)
+								current = oldColumn;
+							else {
+								m_content->cursorSet(oldsel);
+								break;
+							}
+						}
+
+						if (m_content->currentCursorSelectable())
+							break;
+
+					} while (current != oldsel);
+
+					newsel = m_content->cursorGet();
 				}
-				newsel = m_content->cursorGet();
+				else
+				{
+					// Move right within the current row, wrapping to the row's first column if enabled
+					int rowStart = oldsel - oldColumn;
+					int rowEnd = rowStart + m_max_columns - 1;
+					if (rowEnd > m_content->size() - 1)
+						rowEnd = m_content->size() - 1;
+					int current = oldsel;
+
+					do
+					{
+						++current;
+						if (current > rowEnd)
+						{
+							if (!m_enabled_wrap_around)
+							{
+								current = oldsel;
+								m_content->cursorSet(current);
+								break;
+							}
+							current = rowStart;
+						}
+						m_content->cursorSet(current);
+					}
+					while (current != oldsel && !m_content->currentCursorSelectable());
+
+					newsel = m_content->cursorGet();
+				}
+
 			}
-			while (newsel != oldsel && !m_content->currentCursorSelectable());
+			else
+			{
+				do
+				{
+					m_content->cursorMove(1);
+					if (!m_content->cursorValid()) { //cursorMove reached end and left cursor position past the list. Must wrap around ?
+						if (m_enabled_wrap_around)
+							m_content->cursorHome();
+						else
+							m_content->cursorSet(oldsel);
+					}
+					newsel = m_content->cursorGet();
+				}
+				while (newsel != oldsel && !m_content->currentCursorSelectable());
+			}
 			break;
-		case pageUp: {
+		case pageUp:
+		case prevPage: {
+			if (m_orientation == orHorizontal && m_enabled_wrap_around && oldsel == 0)
+			{
+				// already at the first entry, wrap around to the last selectable entry
+				m_content->cursorEnd();
+				m_content->cursorMove(-1);
+				newsel = m_content->cursorGet();
+				while (newsel != oldsel && !m_content->currentCursorSelectable())
+				{
+					m_content->cursorMove(-1);
+					newsel = m_content->cursorGet();
+				}
+				break;
+			}
 			int pageind;
 			do
 			{
@@ -267,7 +584,20 @@ void eListbox::moveSelection(long dir)
 			while (newsel == prevsel);
 			break;
 		}
-		case pageDown: {
+		case pageDown:
+		case nextPage: {
+			if (m_orientation == orHorizontal && m_enabled_wrap_around && oldsel == m_content->size() - 1)
+			{
+				// already at the last entry, wrap around to the first selectable entry
+				m_content->cursorHome();
+				newsel = m_content->cursorGet();
+				while (newsel != oldsel && !m_content->currentCursorSelectable())
+				{
+					m_content->cursorMove(1);
+					newsel = m_content->cursorGet();
+				}
+				break;
+			}
 			int pageind;
 			do
 			{
@@ -316,10 +646,17 @@ void eListbox::moveSelection(long dir)
 
 	/* now, look wether the current selection is out of screen */
 	m_selected = m_content->cursorGet();
-	m_top = m_left = m_selected - (m_selected % m_items_per_page);
+	if (m_orientation == orHorizontal)
+		m_left = m_selected - (m_selected % m_items_per_page);
+	else if (m_orientation == orVertical)
+		m_top = m_selected - (m_selected % m_items_per_page);
+	else if (isGrid && m_max_rows > 0)
+		m_top = (m_selected / m_items_per_page) * m_max_rows;
+	else
+		m_top = m_selected - (m_selected % (m_items_per_page ? m_items_per_page : 1));
 
 	// if it is, then the old selection clip is irrelevant, clear it or we'll get artifacts
-	if (m_orientation == orVertical)
+	if (m_orientation == orVertical || m_orientation == orGrid)
 	{
 		if (m_top != oldtop && m_content)
 			m_content->resetClip();
@@ -345,6 +682,19 @@ void eListbox::moveSelection(long dir)
 			/* redraw the old and newly selected */
 			gRegion inv = eRect(0, m_itemheight * (m_selected-m_top), size().width(), m_itemheight);
 			inv |= eRect(0, m_itemheight * (oldsel-m_top), size().width(), m_itemheight);
+			invalidate(inv);
+		}
+	}
+	else if (m_orientation == orGrid)
+	{
+		if (m_top != oldtop){
+			invalidate();
+		}
+		else if (m_selected != oldsel)
+		{
+			/* redraw the old and newly selected */
+			gRegion inv = eRect(getItemPostion(m_selected), eSize(m_itemwidth, m_itemheight));
+			inv |= eRect(getItemPostion(oldsel), eSize(m_itemwidth, m_itemheight));
 			invalidate(inv);
 		}
 	}
@@ -393,15 +743,25 @@ void eListbox::updateScrollBar()
 	int height = size().height();
 
 	if (m_scrollbar_mode == showNever) {
-		if (m_orientation == orVertical){
+		if (m_orientation == orVertical) {
 			m_content->setSize(eSize(width, m_itemheight));
-		} else {
+		} else if (m_orientation == orHorizontal) {
 			m_content->setSize(eSize(m_itemwidth, height));
+		} else {
+			m_content->setSize(eSize(m_itemwidth, m_itemheight));
 		}
 		return;
 	}
-	
+
+	// Number of "pages" / visible slots. For grid, that is cells per page
+	// (columns * rows), not rows. Using only m_max_rows under-reported the
+	// scrollable range and the thumb was permanently oversized.
+	// For orVertical and orHorizontal, m_items_per_page already equals the
+	// number of visible items (m_items_per_page is set in recalcSize() as
+	// height/itemheight for vertical, width/itemwidth for horizontal).
 	int entries = m_content->size();
+	int maxItems = (m_orientation == orGrid) ? (m_max_columns * m_max_rows) : m_items_per_page;
+
 	if (m_content_changed)
 	{
 		m_content_changed = false;
@@ -411,10 +771,14 @@ void eListbox::updateScrollBar()
 				m_content->setSize(eSize(width-m_scrollbar_width-5, m_itemheight));
 				m_scrollbar->move(ePoint(0, 0));
 				m_scrollbar->resize(eSize(m_scrollbar_width, height));
-			} else {
+			} else if (m_orientation == orHorizontal) {
 				m_content->setSize(eSize(m_itemwidth, height-m_scrollbar_height-5));
 				m_scrollbar->move(ePoint(0, 0));
 				m_scrollbar->resize(eSize(width, m_scrollbar_height));
+			} else {
+				m_content->setSize(eSize(m_itemwidth, m_itemheight));
+				m_scrollbar->move(ePoint(0, 0));
+				m_scrollbar->resize(eSize(m_scrollbar_width, height));
 			}
 			if (entries > m_items_per_page)
 			{
@@ -425,7 +789,7 @@ void eListbox::updateScrollBar()
 				m_scrollbar->hide();
 			}
 		}
-		else if (entries > m_items_per_page || m_scrollbar_mode == showAlways)
+		else if (entries > maxItems || m_scrollbar_mode == showAlways)
 		{
 			if (m_orientation == orVertical) {
 				if (m_scrollbar_mode != showNever) {
@@ -435,13 +799,21 @@ void eListbox::updateScrollBar()
 				} else {
 					m_content->setSize(eSize(width, m_itemheight));
 				}
-			} else {
+			} else if (m_orientation == orHorizontal) {
 				if (m_scrollbar_mode != showNever) {
 					m_scrollbar->move(ePoint(0, height-m_scrollbar_height));
 					m_scrollbar->resize(eSize(width, m_scrollbar_height));
 					m_content->setSize(eSize(m_itemwidth, height-m_scrollbar_height-5));
 				} else {
 					m_content->setSize(eSize(m_itemwidth, height));
+				}
+			} else {
+				if (m_scrollbar_mode != showNever) {
+					m_scrollbar->move(ePoint(width-m_scrollbar_width, 0));
+					m_scrollbar->resize(eSize(m_scrollbar_width, height));
+					m_content->setSize(eSize(m_itemwidth, m_itemheight));
+				} else {
+					m_content->setSize(eSize(m_itemwidth, m_itemheight));
 				}
 			}
 			if (m_scrollbar_mode != showNever) {
@@ -454,25 +826,27 @@ void eListbox::updateScrollBar()
 		{
 			if (m_orientation == orVertical)
 				m_content->setSize(eSize(width, m_itemheight));
-			else
+			else if (m_orientation == orHorizontal)
 				m_content->setSize(eSize(m_itemwidth, height));
+			else
+				m_content->setSize(eSize(m_itemwidth, m_itemheight));
 
 			m_scrollbar->hide();
 		}
 	}
-	if (m_items_per_page && entries)
+	if (maxItems && entries)
 	{
-		int topleft = m_orientation == orVertical ? m_top : m_left;
+		int topleft = m_orientation == orVertical || m_orientation == orGrid ? m_top : m_left;
 
-		int curVisiblePage = topleft / m_items_per_page;
+		int curVisiblePage = topleft / maxItems;
 		if (m_prev_scrollbar_page != curVisiblePage)
 		{
 			m_prev_scrollbar_page = curVisiblePage;
-			int pages = entries / m_items_per_page;
-			if ((pages*m_items_per_page) < entries)
+			int pages = entries / maxItems;
+			if ((pages*maxItems) < entries)
 				++pages;
-			int start=(topleft*100)/(pages*m_items_per_page);
-			int vis=(m_items_per_page*100+pages*m_items_per_page-1)/(pages*m_items_per_page);
+			int start=(topleft*100)/(pages*maxItems);
+			int vis=(maxItems*100+pages*maxItems-1)/(pages*maxItems);
 			if (vis < 3)
 				vis=3;
 			m_scrollbar->setStartEnd(start,start+vis);
@@ -482,7 +856,7 @@ void eListbox::updateScrollBar()
 
 int eListbox::getEntryTop()
 {
-	if (m_orientation == orVertical)
+	if (m_orientation == orVertical || m_orientation == orGrid)
 	{
 		return (m_selected - m_top) * m_itemheight;
 	}
@@ -490,6 +864,21 @@ int eListbox::getEntryTop()
 	{
 		return (m_selected - m_left) * m_itemwidth;
 	}
+}
+
+ePoint eListbox::getItemPostion(int index)
+{
+	int posx = 0, posy = 0;
+
+	if (m_orientation == orGrid || m_orientation == orHorizontal)
+	{
+		posx = (m_orientation == orGrid) ? (m_itemwidth) * ((index - (m_top * m_max_columns)) % m_max_columns) : (m_itemwidth) * (index - m_left);
+		posy = (m_orientation == orGrid) ? (m_itemheight) * ((index - (m_top * m_max_columns)) / m_max_columns) : 0;
+	}
+	else
+		posy = (m_itemheight) * (index - m_top);
+
+	return ePoint(posx, posy);
 }
 
 int eListbox::event(int event, void *data, void *data2)
@@ -516,9 +905,13 @@ int eListbox::event(int event, void *data, void *data2)
 			{
 				m_content->cursorMove(m_top - m_selected);
 			}
-			else
+			else if (m_orientation == orHorizontal)
 			{
 				m_content->cursorMove(m_left - m_selected);
+			}
+			else
+			{
+				m_content->cursorMove((m_max_columns * m_top) - m_selected);
 			}
 
 			gRegion entryrect = m_orientation == orVertical ? eRect(0, 0, size().width(), m_itemheight) : eRect(0, 0, m_itemwidth, size().height());
@@ -532,11 +925,17 @@ int eListbox::event(int event, void *data, void *data2)
 				style->setStyle(painter, eWindowStyle::styleListboxNormal);
 				if (m_style.m_background_color_set)
 					painter.setBackgroundColor(m_style.m_background_color);
-				
+
 				if (cornerRadius && cornerRadiusEdges)
 				{
 					painter.setRadius(cornerRadius, cornerRadiusEdges);
-					painter.drawRectangle(eRect(ePoint(0, 0), size()));
+					// A listbox's own panel background is never a
+					// video-reveal widget - under GLES this must use the
+					// "over" blend formula regardless of the style's fill
+					// color, same as lib/gui/elistboxcontent.cpp's item
+					// backgrounds (see gEGLDC::executeRectangle()'s
+					// comment); other backends are unaffected either way.
+					painter.drawRectangle(eRect(ePoint(0, 0), size()), painter.usingGLES());
 				}
 				else
 					painter.clear();
@@ -554,7 +953,7 @@ int eListbox::event(int event, void *data, void *data2)
 			{
 				yoffset = m_scrollbar->size().height() + 5;
 			}
-			
+
 			if (m_orientation == orVertical)
 			{
 				for (int y = 0, i = 0; i <= m_items_per_page; y += m_itemheight, ++i)
@@ -566,14 +965,15 @@ int eListbox::event(int event, void *data, void *data2)
 
 						/* (we could clip with entry_clip_rect, but
 						this shouldn't change the behavior of any
-						well behaving content, so it would just
+							well behaving content, so it would just
 						degrade performance without any gain.) */
 
 					m_content->cursorMove(+1);
 					entryrect.moveBy(ePoint(0, m_itemheight));
 				}
+				m_content->cursorRestore();
 			}
-			else
+			else if (m_orientation == orHorizontal)
 			{
 				for (int x = 0, i = 0; i <= m_items_per_page; x += m_itemwidth, ++i)
 				{
@@ -584,12 +984,41 @@ int eListbox::event(int event, void *data, void *data2)
 
 						/* (we could clip with entry_clip_rect, but
 						this shouldn't change the behavior of any
-						well behaving content, so it would just
+							well behaving content, so it would just
 						degrade performance without any gain.) */
 
 					m_content->cursorMove(+1);
 					entryrect.moveBy(ePoint(m_itemwidth, 0));
 				}
+				m_content->cursorRestore();
+			}
+			else
+			{
+				int m_max_items = m_items_per_page_with_partials;
+				for (int posx = 0, posy = 0, i = 0; i < m_max_items; posx += m_itemwidth, ++i)
+				{
+					if (i > 0)
+					{
+						if (i % m_max_columns == 0)
+						{
+							posy += m_itemheight;
+							posx = 0;
+						}
+					}
+
+					entryrect = eRect(posx, posy, m_itemwidth, m_itemheight);
+					gRegion entry_clip_rect = paint_region & entryrect;
+					if (!entry_clip_rect.empty())
+					{
+						// always paint, even for out-of-range cursors (e.g. a ragged last row),
+						// so the content clears stale/selected pixels left over from a previous entry
+						m_content->paint(painter, *style, ePoint(posx, posy), m_selected == m_content->cursorGet() && m_content->size() && m_selection_enabled);
+					}
+					m_content->cursorMove(+1);
+				}
+				
+				m_content->cursorRestore();
+
 			}
 
 			// clear/repaint empty/unused space between scrollbar and listboxentrys
@@ -640,8 +1069,6 @@ int eListbox::event(int event, void *data, void *data2)
 				}
 			}
 
-			m_content->cursorRestore();
-
 			return 0;
 		}
 
@@ -671,15 +1098,33 @@ void eListbox::recalcSize()
 			m_content->setSize(eSize(size().width(), m_itemheight));
 		m_items_per_page = size().height() / m_itemheight;
 	}
-	else
+	else if (m_orientation == orHorizontal)
 	{
 		if (m_content)
 			m_content->setSize(eSize(m_itemwidth, size().height()));
 		m_items_per_page = size().width() / m_itemwidth;
 	}
+	else
+	{
+		if (m_content)
+			m_content->setSize(eSize(m_itemwidth, m_itemheight));
+
+		int w = size().width();
+		int h = size().height();
+
+		m_max_columns = w / m_itemwidth;
+		m_max_rows = h / m_itemheight;
+		m_items_per_page = m_max_columns * m_max_rows;
+		m_items_per_page_with_partials = m_max_columns * ((h + m_itemheight - 1) / m_itemheight);
+	}
 
 	if (m_items_per_page < 0) /* TODO: whyever - our size could be invalid, or itemheigh could be wrongly specified. */
- 		m_items_per_page = 0;
+		m_items_per_page = 0;
+
+	if (m_max_columns < 0)
+		m_max_columns = 0;
+	if (m_max_rows < 0)
+		m_max_rows = 0;
 
 	moveSelection(justCheck);
 }
@@ -711,7 +1156,7 @@ void eListbox::setSelectionEnable(int en)
 
 void eListbox::entryAdded(int index)
 {
-	if (m_content && (m_content->size() % m_items_per_page) == 1)
+	if (m_content && m_items_per_page && (m_content->size() % m_items_per_page) == 1)
 		m_content_changed=true;
 	/* manage our local pointers. when the entry was added before the current position, we have to advance. */
 
@@ -737,55 +1182,62 @@ void eListbox::entryAdded(int index)
 	if (m_orientation == orVertical)
 	{
 		if ((m_top <= index) && (index < (m_top + m_items_per_page)))
-		{
-				/* todo, calc exact invalidation... */
 			invalidate();
-		}
 	}
-	else
+	else if (m_orientation == orHorizontal)
 	{
 		if ((m_left <= index) && (index < (m_left + m_items_per_page)))
-		{
-				/* todo, calc exact invalidation... */
 			invalidate();
-		}
+	}
+	else // orGrid
+	{
+		// Any index shift affects every cell position in a grid, so just
+		// repaint the whole thing. Cheap relative to a stale grid.
+		invalidate();
 	}
 }
 
 void eListbox::entryRemoved(int index)
 {
-	if (m_content && !(m_content->size() % m_items_per_page))
+	if (m_content && m_items_per_page && !(m_content->size() % m_items_per_page))
 		m_content_changed=true;
 
-	if (index == m_selected && m_content)
-		m_selected = m_content->cursorGet();
+	if (m_content)
+	{
+		// Remove happened BELOW the current selection: keep the selection on
+		// the same underlying item by decrementing the index. Remove happened
+		// ON the selection: let the content decide (it may have already moved
+		// the cursor to a neighbour).
+		if (index < m_selected)
+			--m_selected;
+		else if (index == m_selected)
+			m_selected = m_content->cursorGet();
+	}
 
 	if (m_content && m_content->cursorGet() >= m_content->size())
 		moveSelection(moveUp);
 	else
 		moveSelection(justCheck);
-	
-	if (m_orientation == orVertical) 
+
+	if (m_orientation == orVertical)
 	{
 		if ((m_top <= index) && (index < (m_top + m_items_per_page)))
-		{
-				/* todo, calc exact invalidation... */
 			invalidate();
-		}
 	}
-	else
+	else if (m_orientation == orHorizontal)
 	{
 		if ((m_left <= index) && (index < (m_left + m_items_per_page)))
-		{
-				/* todo, calc exact invalidation... */
 			invalidate();
-		}
+	}
+	else // orGrid
+	{
+		invalidate();
 	}
 }
 
 void eListbox::entryChanged(int index)
 {
-	if (m_orientation == orVertical) 
+	if (m_orientation == orVertical)
 	{
 		if ((m_top <= index) && (index < (m_top + m_items_per_page)))
 		{
@@ -793,11 +1245,37 @@ void eListbox::entryChanged(int index)
 			invalidate(inv);
 		}
 	}
-	else
+	else if (m_orientation == orHorizontal)
 	{
 		if ((m_left <= index) && (index < (m_left + m_items_per_page)))
 		{
 			gRegion inv = eRect(m_itemwidth * (index-m_left), 0, m_itemwidth, size().height());
+			invalidate(inv);
+		}
+	}
+	else
+	{
+		// orGrid: unlike the orVertical/orHorizontal branches above, this had
+		// no "is index actually part of the currently displayed page" check
+		// before computing/invalidating a rect for it. A stale entryChanged()
+		// for an index that has since scrolled off-page (e.g. a content
+		// provider's async thumbnail-loaded callback firing for a row the
+		// user has since scrolled past - see eListbox::redrawItemByIndex())
+		// still fell into this branch, and getItemPostion() has no notion of
+		// "off-page" either - it maps ANY index through the current page's
+		// (m_top, m_max_columns) arithmetic regardless of how far off it
+		// actually is, so a stale index some multiple of a page-width away
+		// can alias right back onto a real, currently visible cell's
+		// position. That invalidates and repaints a cell that was never
+		// actually dirty, and each such repaint re-invokes the content
+		// provider's build callback, which is exactly the kind of spurious,
+		// unbounded extra work orVertical/orHorizontal already guard against
+		// by simply not invalidating for an off-page index at all.
+		int gridStart = m_top * m_max_columns;
+		int gridEnd = gridStart + m_items_per_page_with_partials;
+		if ((index >= gridStart) && (index < gridEnd))
+		{
+			gRegion inv = eRect(getItemPostion(index), eSize(m_itemwidth, m_itemheight));
 			invalidate(inv);
 		}
 	}
@@ -866,12 +1344,14 @@ void eListbox::setBackgroundColor(const gRGB &col)
 {
 	m_style.m_background_color = col;
 	m_style.m_background_color_set = 1;
+	setTransparent(0);
 }
 
 void eListbox::setBackgroundColorSelected(gRGB &col)
 {
 	m_style.m_background_color_selected = col;
 	m_style.m_background_color_selected_set = 1;
+	setTransparent(0);
 }
 
 void eListbox::setForegroundColor(gRGB &col)
@@ -897,23 +1377,6 @@ void eListbox::setBorderWidth(int size)
 	if (m_scrollbar) m_scrollbar->setBorderWidth(size);
 }
 
-void eListbox::setScrollbarSliderBorderWidth(int size)
-{
-	m_style.m_scrollbarsliderborder_size = size;
-	m_style.m_scrollbarsliderborder_size_set = 1;
-	if (m_scrollbar) m_scrollbar->setSliderBorderWidth(size);
-}
-
-void eListbox::setScrollbarWidth(int size)
-{
-	m_scrollbar_width = size;
-}
-
-void eListbox::setScrollbarHeight(int size)
-{
-	m_scrollbar_height = size;
-}
-
 void eListbox::setBackgroundPicture(ePtr<gPixmap> &pm)
 {
 	m_style.m_background = pm;
@@ -934,33 +1397,50 @@ void eListbox::setSelectionBorderHidden()
 	m_style.m_border_set = 1;
 }
 
-void eListbox::setSliderPicture(ePtr<gPixmap> &pm)
+void eListbox::setScrollbarWidth(int size)
+{
+	m_scrollbar_width = size;
+}
+
+void eListbox::setScrollbarHeight(int size)
+{
+	m_scrollbar_height = size;
+}
+
+void eListbox::setScrollbarBorderWidth(int size)
+{
+	m_style.m_scrollbarborder_width = size;
+	if (m_scrollbar) m_scrollbar->setBorderWidth(size);
+}
+
+void eListbox::setScrollbarBorderColor(const gRGB &col)
+{
+	m_style.m_scrollbarborder_color = col;
+	m_style.m_scrollbarborder_color_set = 1;
+	if (m_scrollbar) m_scrollbar->setBorderColor(col);
+}
+
+void eListbox::setScrollbarForegroundColor(const gRGB &col)
+{
+	m_style.m_scrollbarforeground_color = col;
+	m_style.m_scrollbarforeground_color_set = 1;
+	if (m_scrollbar) m_scrollbar->setForegroundColor(col);
+}
+
+void eListbox::setScrollbarBackgroundColor(const gRGB &col)
+{
+	m_style.m_scrollbarbackground_color = col;
+	m_style.m_scrollbarbackground_color_set = 1;
+	if (m_scrollbar) m_scrollbar->setBackgroundColor(col);
+}
+
+void eListbox::setScrollbarPixmap(ePtr<gPixmap> &pm)
 {
 	m_scrollbarpixmap = pm;
 	if (m_scrollbar && m_scrollbarpixmap) m_scrollbar->setPixmap(pm);
 }
 
-void eListbox::setSliderForegroundColor(gRGB &col)
-{
-	m_style.m_sliderforeground_color = col;
-	m_style.m_sliderforeground_color_set = 1;
-	if (m_scrollbar) m_scrollbar->setSliderForegroundColor(col);
-}
-
-void eListbox::setSliderBorderColor(const gRGB &col)
-{
-	m_style.m_sliderborder_color = col;
-	m_style.m_sliderborder_color_set = 1;
-	if (m_scrollbar) m_scrollbar->setSliderBorderColor(col);
-}
-
-void eListbox::setSliderBorderWidth(int size)
-{
-	m_style.m_sliderborder_size = size;
-	if (m_scrollbar) m_scrollbar->setSliderBorderWidth(size);
-}
-
-void eListbox::setScrollbarBackgroundPicture(ePtr<gPixmap> &pm)
+void eListbox::setScrollbarBackgroundPixmap(ePtr<gPixmap> &pm)
 {
 	m_scrollbarbackgroundpixmap = pm;
 	if (m_scrollbar && m_scrollbarbackgroundpixmap) m_scrollbar->setBackgroundPixmap(pm);
@@ -981,13 +1461,13 @@ struct eListboxStyle *eListbox::getLocalStyle(void)
 	return &m_style;
 }
 
-void eListbox::setItemCornerRadiusInternal(int radius, int edges, int index)
+void eListbox::setItemCornerRadiusInternal(int radius, uint8_t edges, int index)
 {
 	m_style.m_itemCornerRadius[index] = radius;
 	m_style.m_itemCornerRadiusEdges[index] = edges;
 }
 
-void eListbox::setItemCornerRadius(int radius, int edges)
+void eListbox::setItemCornerRadius(int radius, uint8_t edges)
 {
 	for (int x = 0; x < 2; x++)
 	{
@@ -995,7 +1475,26 @@ void eListbox::setItemCornerRadius(int radius, int edges)
 	}
 }
 
-void eListbox::setItemCornerRadiusSelected(int radius, int edges)
+void eListbox::setItemCornerRadiusSelected(int radius, uint8_t edges)
 {
 	setItemCornerRadiusInternal(radius, edges, 1);
+}
+
+void eListbox::setItemGradientInternal(uint8_t index, const gRGB &startcolor, const gRGB &midcolor, const gRGB &endcolor, uint8_t direction, bool alphablend)
+{
+	m_style.m_gradient_colors[index] = {startcolor, midcolor, endcolor};
+	m_style.m_gradient_direction[index] = direction;
+	m_style.m_gradient_alphablend[index] = alphablend;
+	m_style.m_gradient_set[index] = true;
+	invalidate();
+}
+
+void eListbox::setItemGradient(const gRGB &startcolor, const gRGB &midcolor, const gRGB &endcolor, uint8_t direction, bool alphablend)
+{
+	setItemGradientInternal(0, startcolor, midcolor, endcolor, direction, alphablend);
+}
+
+void eListbox::setItemGradientSelected(const gRGB &startcolor, const gRGB &midcolor, const gRGB &endcolor, uint8_t direction, bool alphablend)
+{
+	setItemGradientInternal(1, startcolor, midcolor, endcolor, direction, alphablend);
 }

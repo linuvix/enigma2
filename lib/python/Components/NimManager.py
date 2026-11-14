@@ -707,7 +707,10 @@ class NIM:
 
 	def getFriendlyFullDescriptionCompressed(self):
 		if self.isFBCTuner():
-			return "%s-%s: %s" % (self.getSlotName(self.slot), self.getSlotID(self.slot + 7), self.getFullDescription())
+			# FIX: mask slot to the first slot of the FBC group so a non-root FBC link
+			# also displays the correct "Tuner A-H" range. Matches ViX behaviour.
+			base = self.slot & ~7
+			return "%s-%s: %s" % (self.getSlotName(base), self.getSlotID(base + 7), self.getFullDescription())
 		#compress by combining dual tuners by checking if the next tuner has a rf switch
 		elif self.frontend_id is not None and self.number_of_slots > self.frontend_id + 1 and os.access("/proc/stb/frontend/%d/rf_switch" % (self.frontend_id + 1), os.F_OK):
 			return "%s-%s: %s" % (self.slot_name, self.getSlotID(self.slot + 1), self.getFullDescription())
@@ -878,6 +881,12 @@ class NimManager:
 		# nim_slots is an array which has exactly one entry for each slot, even for empty ones.
 		self.nim_slots = []
 
+		# OPTIONAL (commented out by default): uncomment only if you use OpenPLi Client Mode
+		# or Vu+ kexec multiboot, so local NIMs are ignored in those modes.
+		# if config.clientmode.enabled.value or (BoxInfo.getItem("HasKexecMultiboot") and BoxInfo.getItem("MultiBootSlot") == 0):
+		# 	print("[NimManager][enumerateNIMs] Receiver in client mode or Vu+ Recovery. Local NIMs will be ignored.")
+		# 	return
+
 		try:
 			nimfile = open("/proc/bus/nim_sockets")
 		except IOError:
@@ -958,7 +967,8 @@ class NimManager:
 				entry["supports_blind_scan"] = False
 
 			entry["fbc"] = [0, 0, 0] # not fbc
-			if entry["name"] and ("fbc" in entry["name"].lower() or (entry["name"] in BoxInfo.getItem("HasFBCtuner") and entry["frontend_device"] is not None and os.access("/proc/stb/frontend/%d/fbc_id" % entry["frontend_device"], os.F_OK))):
+
+			if entry["name"] and ("fbc" in entry["name"].lower() or (("45308X" in entry["name"].upper() or "45208" in entry["name"].upper() or "BCM3158" in entry["name"].upper()) and BoxInfo.getItem("model") in ("dm900", "dm920")) or (entry["name"] in BoxInfo.getItem("HasFBCtuner") and entry["frontend_device"] is not None and os.access("/proc/stb/frontend/%d/fbc_id" % entry["frontend_device"], os.F_OK))):
 				fbc_number += 1
 				if fbc_number <= (entry["type"] and "DVB-C" in entry["type"] and 1 or 2):
 					entry["fbc"] = [1, fbc_number, fbc_tuner] # fbc root
@@ -1126,7 +1136,8 @@ class NimManager:
 				return not (configMode == "nothing")
 
 	def getSatListForNim(self, slotid):
-		list = []
+		# FIX: renamed local variable 'list' -> 'result' to avoid shadowing the builtin
+		result = []
 		if self.nim_slots[slotid].isCompatible("DVB-S"):
 			nim = config.Nims[slotid]
 			#print "slotid:", slotid
@@ -1148,43 +1159,43 @@ class NimManager:
 				dm = nim.diseqcMode.value
 				if dm in ("single", "toneburst_a_b", "diseqc_a_b", "diseqc_a_b_c_d"):
 					if nim.diseqcA.orbital_position < 3600:
-						list.append(self.satList[nim.diseqcA.index - 2])
+						result.append(self.satList[nim.diseqcA.index - 2])
 				if dm in ("toneburst_a_b", "diseqc_a_b", "diseqc_a_b_c_d"):
 					if nim.diseqcB.orbital_position < 3600:
-						list.append(self.satList[nim.diseqcB.index - 2])
+						result.append(self.satList[nim.diseqcB.index - 2])
 				if dm == "diseqc_a_b_c_d":
 					if nim.diseqcC.orbital_position < 3600:
-						list.append(self.satList[nim.diseqcC.index - 2])
+						result.append(self.satList[nim.diseqcC.index - 2])
 					if nim.diseqcD.orbital_position < 3600:
-						list.append(self.satList[nim.diseqcD.index - 2])
+						result.append(self.satList[nim.diseqcD.index - 2])
 				if dm == "positioner":
 					for x in self.satList:
-						list.append(x)
+						result.append(x)
 				if dm == "positioner_select":
 					userSatlist = nim.userSatellitesList.value
 					userSatlist = userSatlist.replace("]", "").replace("[", "")
 					for x in self.satList:
 						sat_str = str(x[0])
 						if userSatlist and ("," not in userSatlist and sat_str == userSatlist) or ((', ' + sat_str + ',' in userSatlist) or (userSatlist.startswith(sat_str + ',')) or (userSatlist.endswith(', ' + sat_str))):
-							list.append(x)
+							result.append(x)
 			elif configMode == "advanced":
 				for x in range(3601, 3605):
 					if int(nim.advanced.sat[x].lnb.value) != 0:
 						for x in self.satList:
-							list.append(x)
-				if not list:
+							result.append(x)
+				if not result:
 					for x in self.satList:
 						if int(nim.advanced.sat[x[0]].lnb.value) != 0:
-							list.append(x)
+							result.append(x)
 				for x in range(3605, 3607):
 					if int(nim.advanced.sat[x].lnb.value) != 0:
 						userSatlist = nim.advanced.sat[x].userSatellitesList.value
 						userSatlist = userSatlist.replace("]", "").replace("[", "")
 						for user_sat in self.satList:
 							sat_str = str(user_sat[0])
-							if userSatlist and ("," not in userSatlist and sat_str == userSatlist) or ((', ' + sat_str + ',' in userSatlist) or (userSatlist.startswith(sat_str + ',')) or (userSatlist.endswith(', ' + sat_str))) and user_sat not in list:
-								list.append(user_sat)
-		return list
+							if userSatlist and ("," not in userSatlist and sat_str == userSatlist) or ((', ' + sat_str + ',' in userSatlist) or (userSatlist.startswith(sat_str + ',')) or (userSatlist.endswith(', ' + sat_str))) and user_sat not in result:
+								result.append(user_sat)
+		return result
 
 	def getNimListForSat(self, orb_pos):
 		return [nim.slot for nim in self.nim_slots if nim.isCompatible("DVB-S") and not nim.isFBCLink() and orb_pos in [sat[0] for sat in self.getSatListForNim(nim.slot)]]
@@ -1223,7 +1234,8 @@ class NimManager:
 		return number and 9998 or _("rotor is not used")
 
 	def getRotorSatListForNim(self, slotid, only_first=False):
-		list = []
+		# FIX: renamed local variable 'list' -> 'rlist' to avoid shadowing the builtin
+		rlist = []
 		if self.nim_slots[slotid].isCompatible("DVB-S"):
 			nim = config.Nims[slotid]
 			configMode = nim.configMode.value
@@ -1232,7 +1244,7 @@ class NimManager:
 					for x in self.satList:
 						if only_first:
 							return True
-						list.append(x)
+						rlist.append(x)
 				elif nim.diseqcMode.value == "positioner_select":
 					userSatlist = nim.userSatellitesList.value
 					userSatlist = userSatlist.replace("]", "").replace("[", "")
@@ -1241,15 +1253,15 @@ class NimManager:
 						if userSatlist and ("," not in userSatlist and sat_str == userSatlist) or ((', ' + sat_str + ',' in userSatlist) or (userSatlist.startswith(sat_str + ',')) or (userSatlist.endswith(', ' + sat_str))):
 							if only_first:
 								return True
-							list.append(x)
+							rlist.append(x)
 			elif configMode == "advanced":
 				for x in range(3601, 3605):
 					if int(nim.advanced.sat[x].lnb.value) != 0:
 						for x in self.satList:
 							if only_first:
 								return True
-							list.append(x)
-				if not list:
+							rlist.append(x)
+				if not rlist:
 					for x in self.satList:
 						lnbnum = int(nim.advanced.sat[x[0]].lnb.value)
 						if lnbnum != 0:
@@ -1257,18 +1269,18 @@ class NimManager:
 							if lnb.diseqcMode.value == "1_2":
 								if only_first:
 									return True
-								list.append(x)
+								rlist.append(x)
 				for x in range(3605, 3607):
 					if int(nim.advanced.sat[x].lnb.value) != 0:
 						userSatlist = nim.advanced.sat[x].userSatellitesList.value
 						userSatlist = userSatlist.replace("]", "").replace("[", "")
 						for user_sat in self.satList:
 							sat_str = str(user_sat[0])
-							if userSatlist and ("," not in userSatlist and sat_str == userSatlist) or ((', ' + sat_str + ',' in userSatlist) or (userSatlist.startswith(sat_str + ',')) or (userSatlist.endswith(', ' + sat_str))) and user_sat not in list:
+							if userSatlist and ("," not in userSatlist and sat_str == userSatlist) or ((', ' + sat_str + ',' in userSatlist) or (userSatlist.startswith(sat_str + ',')) or (userSatlist.endswith(', ' + sat_str))) and user_sat not in rlist:
 								if only_first:
 									return True
-								list.append(user_sat)
-		return list
+								rlist.append(user_sat)
+		return rlist
 
 
 def InitSecParams():
@@ -1389,6 +1401,20 @@ def InitNimManager(nimmgr, update_slots=[]):
 	advanced_lnb_fast_turning_btime = mktime(datetime(1970, 1, 1, 7, 0).timetuple())
 	advanced_lnb_fast_turning_etime = mktime(datetime(1970, 1, 1, 19, 0).timetuple())
 
+	# FIX: safe lookup helper for unicable.xml, avoids IndexError when a stored
+	# manufacturer/product no longer exists in the XML (e.g. after an update).
+	def _findUnicableManufacturer(unicable_xml, lnb_or_matrix, manufacturer):
+		try:
+			node = unicable_xml.find(lnb_or_matrix)
+		except Exception:
+			node = None
+		if node is None:
+			return None
+		for m in node:
+			if m.get("name") == manufacturer:
+				return m
+		return None
+
 	def configLOFChanged(configElement):
 		if configElement.value == "unicable":
 			x = configElement.slot_id
@@ -1420,10 +1446,24 @@ def InitNimManager(nimmgr, update_slots=[]):
 					section.lofh = ConfigInteger(default=int(productparameters.get("lofh", 10600)), limits=(0, 99999))
 					section.threshold = ConfigInteger(default=int(productparameters.get("threshold", 11700)), limits=(0, 99999))
 
+				# FIX: rewritten to avoid IndexError when the stored product is
+				# no longer present in unicable.xml (or the manufacturer moved
+				# between <lnb> and <matrix>).
 				def unicableProductChanged(manufacturer, lnb_or_matrix, configEntry):
 					config.unicable.unicableProduct.value = configEntry.value
 					config.unicable.unicableProduct.save()
-					productparameters = [p for p in [m for m in unicable_xml.find(lnb_or_matrix) if m.get("name") == manufacturer][0] if p.get("name") == configEntry.value][0]
+
+					manufacturerNode = _findUnicableManufacturer(unicable_xml, lnb_or_matrix, manufacturer)
+					productparameters = None
+					if manufacturerNode is not None:
+						for p in manufacturerNode:
+							if p.get("name") == configEntry.value:
+								productparameters = p
+								break
+					if productparameters is None:
+						print("[NimManager] unicableProductChanged: product '%s' not found for manufacturer '%s' in <%s>, skipping" % (configEntry.value, manufacturer, lnb_or_matrix))
+						return
+
 					section.bootuptime = ConfigInteger(default=int(productparameters.get("bootuptime", 1000)), limits=(0, 9999))
 					section.bootuptime.save_forced = True
 					section.powerinserter = ConfigYesNo(default=BoxInfo.getItem("FbcTunerPowerAlwaysOn"))
@@ -1434,10 +1474,21 @@ def InitNimManager(nimmgr, update_slots=[]):
 					section.scrList.save_forced = True
 					section.scrList.addNotifier(boundFunction(scrListChanged, productparameters, srcfrequencylist))
 
+				# FIX: rewritten to avoid IndexError / empty product list when
+				# the stored manufacturer is not present in unicable.xml.
 				def unicableManufacturerChanged(lnb_or_matrix, configEntry):
 					config.unicable.unicableManufacturer.value = configEntry.value
 					config.unicable.unicableManufacturer.save()
-					productslist = [p.get("name") for p in [m for m in unicable_xml.find(lnb_or_matrix) if m.get("name") == configEntry.value][0]]
+
+					manufacturerNode = _findUnicableManufacturer(unicable_xml, lnb_or_matrix, configEntry.value)
+					if manufacturerNode is None:
+						print("[NimManager] unicableManufacturerChanged: manufacturer '%s' not found in <%s>, skipping" % (configEntry.value, lnb_or_matrix))
+						return
+					productslist = [p.get("name") for p in manufacturerNode]
+					if not productslist:
+						print("[NimManager] unicableManufacturerChanged: manufacturer '%s' has no products" % configEntry.value)
+						return
+
 					if not config.unicable.content.items.get("unicableProduct", False) or config.unicable.unicableProduct.value not in productslist:
 						config.unicable.unicableProduct = ConfigSelection(productslist)
 					config.unicable.unicableProduct.save_forced = True
@@ -1470,22 +1521,20 @@ def InitNimManager(nimmgr, update_slots=[]):
 				def unicableChanged(configEntry):
 					config.unicable.unicable.value = configEntry.value
 					config.unicable.unicable.save()
-					if configEntry.value == "unicable_matrix":
-						manufacturerlist = [m.get("name") for m in unicable_xml.find("matrix")]
+					# FIX: hardened matrix/lnb branches against a missing XML node
+					# or a stale stored manufacturer value.
+					if configEntry.value in ("unicable_matrix", "unicable_lnb"):
+						node = unicable_xml.find("matrix" if configEntry.value == "unicable_matrix" else "lnb")
+						manufacturerlist = [m.get("name") for m in node] if node is not None else []
+						if not manufacturerlist:
+							print("[NimManager] unicableChanged: no manufacturers found for %s, skipping" % configEntry.value)
+							return
 						if not config.unicable.content.items.get("unicableManufacturer", False) or config.unicable.unicableManufacturer.value not in manufacturerlist:
 							config.unicable.unicableManufacturer = ConfigSelection(manufacturerlist)
 						section.unicableManufacturer = ConfigSelection(manufacturerlist, default=config.unicable.unicableManufacturer.value)
 						section.unicableManufacturer.save_forced = True
 						config.unicable.unicableManufacturer.save_forced = True
-						section.unicableManufacturer.addNotifier(boundFunction(unicableManufacturerChanged, "matrix"))
-					elif configEntry.value == "unicable_lnb":
-						manufacturerlist = [m.get("name") for m in unicable_xml.find("lnb")]
-						if not config.unicable.content.items.get("unicableManufacturer", False) or config.unicable.unicableManufacturer.value not in manufacturerlist:
-							config.unicable.unicableManufacturer = ConfigSelection(manufacturerlist)
-						section.unicableManufacturer = ConfigSelection(manufacturerlist, default=config.unicable.unicableManufacturer.value)
-						section.unicableManufacturer.save_forced = True
-						config.unicable.unicableManufacturer.save_forced = True
-						section.unicableManufacturer.addNotifier(boundFunction(unicableManufacturerChanged, "lnb"))
+						section.unicableManufacturer.addNotifier(boundFunction(unicableManufacturerChanged, "matrix" if configEntry.value == "unicable_matrix" else "lnb"))
 					else:
 						section.format = ConfigSelection([("unicable", _("SCR Unicable")), ("jess", _("SCR JESS"))])
 						section.format.addNotifier(formatChanged)

@@ -1,6 +1,6 @@
 # The following KEYID numbers are currently unused:
 #
-# 199, 204, 228-237, 239, 241-255, 258-303, 316-351,
+# 199, 204, 228-237, 239, 241-255, 258-303, 316-350,
 # 416-437, 439-447, 452-509, 512-529, 531-626, 628-UP.
 #
 # PLEASE NOTE: If you add any buttons PLEASE update this list to assist
@@ -232,7 +232,7 @@ KEYIDS = {
 	"KEY_BRIGHTNESSDOWN": 224,
 	"KEY_BRIGHTNESSUP": 225,
 	"KEY_MEDIA": 226,
-	"KEY_VMODE": 227,  # Deprecated, retained for backwards compatibility.
+	"KEY_VMODE": 227,
 	"KEY_SWITCHVIDEOMODE": 227,
 	"KEY_LAN": 238,
 	"KEY_UNKNOWN": 240,
@@ -250,6 +250,7 @@ KEYIDS = {
 	"BtnTR2": 313,
 	"BtnSelect": 314,
 	"BtnStart": 315,
+	"KEY_SHIFT": 351,
 	"KEY_OK": 352,
 	"KEY_SELECT": 353,
 	"KEY_GOTO": 354,
@@ -274,6 +275,7 @@ KEYIDS = {
 	"KEY_MODE": 373,
 	"KEY_KEYBOARD": 374,
 	"KEY_SCREEN": 375,
+	"KEY_ASPECT_RATIO": 375,
 	"KEY_PC": 376,
 	"KEY_TV": 377,
 	"KEY_TV2": 378,
@@ -331,14 +333,16 @@ KEYFLAGS = {
 	1: "Break",
 	2: "Repeat",
 	3: "Long",
-	4: "ASCII"
+	4: "ASCII",
+	5: "Stop"
 }
 
 # First entry in each tuple is the preferred name.
 #
 knownAlisaes = {
 	227: ("KEY_SWITCHVIDEOMODE", "KEY_VMODE"),
-	530: ("KEY_MOUSE", "KEY_TOUCHPAD_TOGGLE")
+	530: ("KEY_MOUSE", "KEY_TOUCHPAD_TOGGLE"),
+	375: ("KEY_SCREEN", "KEY_ASPECT_RATIO")
 }
 
 
@@ -353,3 +357,6 @@ def invertKeyIds():
 			else:
 				print("[Keyids] Error: Key code %d is mapped to both '%s' and '%s'!" % (value, invKeyIds[value], key))
 	return invKeyIds
+
+# Added for OpenATV compatibility.
+KEYIDNAMES = invertKeyIds()

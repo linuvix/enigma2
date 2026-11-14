@@ -8,6 +8,12 @@ ePixmap::ePixmap(eWidget *parent)
 {
 }
 
+/* NEW: destructor declared in the header. No animation state in this
+ * build (no m_frames / m_delays / m_animTimer), so nothing to tear down. */
+ePixmap::~ePixmap()
+{
+}
+
 void ePixmap::setAlphatest(int alphatest)
 {
 	m_alphatest = alphatest;
@@ -60,6 +66,22 @@ void ePixmap::setPixmapFromFile(const char *filename)
 		// TODO: This only works for desktop 0
 	getDesktop(0)->makeCompatiblePixmap(*m_pixmap);
 	event(evtChangedPixmap);
+}
+
+/* NEW: 2-arg overload for OpenATV plugins.
+ * This build has no detectImageType in the SWIG layer, so autoDetect is
+ * accepted and ignored — loadImage() already dispatches by extension. */
+void ePixmap::setPixmapFromFile(const char *filename, bool /*autoDetect*/)
+{
+	setPixmapFromFile(filename);
+}
+
+/* NEW: OpenATV animation API — non-functional fallback in this build
+ * (no libgif, no loadGIF/loadWEBP SWIG bindings). A static image passed
+ * here just renders via the normal setPixmapFromFile() path. */
+void ePixmap::setAniPixmapFromFile(const char *filename, bool /*autostart*/)
+{
+	setPixmapFromFile(filename);
 }
 
 void ePixmap::setBorderWidth(int pixel)

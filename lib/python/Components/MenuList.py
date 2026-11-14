@@ -1,5 +1,4 @@
 from Components.GUIComponent import GUIComponent
-
 from enigma import eListboxPythonStringContent, eListbox
 
 
@@ -44,21 +43,67 @@ class MenuList(GUIComponent):
 		if self.instance is not None:
 			self.instance.moveSelectionTo(idx)
 
-	def pageUp(self):
+	# --- OpenATV compat: standard go* methods ---
+	def goTop(self):
+		if self.instance is not None:
+			self.instance.moveSelection(self.instance.moveTop)
+
+	def goPageUp(self):
 		if self.instance is not None:
 			self.instance.moveSelection(self.instance.pageUp)
 
-	def pageDown(self):
-		if self.instance is not None:
-			self.instance.moveSelection(self.instance.pageDown)
-
-	def up(self):
+	def goLineUp(self):
 		if self.instance is not None:
 			self.instance.moveSelection(self.instance.moveUp)
 
-	def down(self):
+	def goLineDown(self):
 		if self.instance is not None:
 			self.instance.moveSelection(self.instance.moveDown)
+
+	def goPageDown(self):
+		if self.instance is not None:
+			self.instance.moveSelection(self.instance.pageDown)
+
+	def goBottom(self):
+		if self.instance is not None:
+			self.instance.moveSelection(self.instance.moveEnd)
+
+	def getCurrentIndex(self):
+		return self.getSelectionIndex()
+
+	def setCurrentIndex(self, idx):
+		self.moveToIndex(idx)
+
+	def getTopIndex(self):
+		return self.instance.getTopIndex() if self.instance else -1
+
+	def setTopIndex(self, idx):
+		if self.instance is not None:
+			self.instance.setTopIndex(idx)
+
+	def enableAutoNavigation(self, enabled):
+		if self.instance is not None:
+			self.instance.enableAutoNavigation(enabled)
+	# --- end OpenATV compat ---
+
+	# Old OpenPLi method names (mapped to the new ones)
+	def pageUp(self):
+		self.goPageUp()
+
+	def pageDown(self):
+		self.goPageDown()
+
+	def up(self):
+		self.goLineUp()
+
+	def down(self):
+		self.goLineDown()
+
+	def top(self):
+		self.goTop()
+
+	def bottom(self):
+		self.goBottom()
 
 	def selectionEnabled(self, enabled):
 		if self.instance is not None:

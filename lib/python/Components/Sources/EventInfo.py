@@ -111,6 +111,15 @@ class pServiceEvent:
 	def getLinkageService(self):
 		return 0
 
+	def getCridData(self, types):
+		return []
+
+	def getEPGSource(self):
+		return ""
+
+	def getGenreDataList(self):
+		return []
+
 
 class EventInfo(PerServiceBase, Source):
 	NOW = 0

@@ -153,10 +153,9 @@ class InitInputDevices:
 			if configElement.value != "":
 				devname = iInputDevices.getDeviceAttribute(self.currentDevice, 'name')
 				if devname != configElement.value:
-					cmd = "config.inputDevices." + self.currentDevice + ".enabled.value = False"
-					exec(cmd)
-					cmd = "config.inputDevices." + self.currentDevice + ".enabled.save()"
-					exec(cmd)
+					enabled = getattr(getattr(config.inputDevices, self.currentDevice), "enabled")
+					enabled.value = False
+					enabled.save()
 		elif iInputDevices.currentDevice != "":
 			iInputDevices.setName(iInputDevices.currentDevice, configElement.value)
 

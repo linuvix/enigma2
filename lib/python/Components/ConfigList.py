@@ -2,7 +2,7 @@ from enigma import eListbox, eListboxPythonConfigContent, ePoint, eRCInput, eTim
 from skin import parameters, applySkinFactor, parseColor
 
 from Components.ActionMap import HelpableActionMap, HelpableNumberActionMap
-from Components.config import ConfigBoolean, ConfigElement, ConfigInteger, ConfigMacText, ConfigNothing, ConfigNumber, ConfigSelection, ConfigSequence, ConfigText, ACTIONKEY_0, ACTIONKEY_ASCII, ACTIONKEY_BACKSPACE, ACTIONKEY_DELETE, ACTIONKEY_ERASE, ACTIONKEY_FIRST, ACTIONKEY_LAST, ACTIONKEY_LEFT, ACTIONKEY_NUMBERS, ACTIONKEY_RIGHT, ACTIONKEY_SELECT, ACTIONKEY_TIMEOUT, ACTIONKEY_TOGGLE, configfile
+from Components.config import ConfigBoolean, ConfigElement, ConfigInteger, ConfigMacText, ConfigNothing, ConfigNumber, ConfigPassword, ConfigSelection, ConfigSequence, ConfigText, ACTIONKEY_0, ACTIONKEY_ASCII, ACTIONKEY_BACKSPACE, ACTIONKEY_DELETE, ACTIONKEY_ERASE, ACTIONKEY_FIRST, ACTIONKEY_LAST, ACTIONKEY_LEFT, ACTIONKEY_NUMBERS, ACTIONKEY_RIGHT, ACTIONKEY_SELECT, ACTIONKEY_TIMEOUT, ACTIONKEY_TOGGLE, configfile
 from Components.GUIComponent import GUIComponent
 from Components.Pixmap import Pixmap
 from Components.Sources.Boolean import Boolean
@@ -14,6 +14,8 @@ from Screens.VirtualKeyBoard import VirtualKeyBoard
 
 
 class ConfigList(GUIComponent):
+	GUI_WIDGET = eListbox
+
 	def __init__(self, list, session=None):
 		GUIComponent.__init__(self)
 		self.l = eListboxPythonConfigContent()  # noqa: E741
@@ -48,6 +50,10 @@ class ConfigList(GUIComponent):
 	def handleKey(self, key, callback=None):
 		selection = self.getCurrent()
 		if selection and len(selection) > 1 and selection[1].enabled:
+			# --- OpenATV compat: isReadOnly check ---
+			if hasattr(selection[1], "isReadOnly") and selection[1].isReadOnly():
+				return
+			# --- end OpenATV compat ---
 			selection[1].handleKey(key, callback)
 			self.invalidateCurrent()
 			if key in ACTIONKEY_NUMBERS:
@@ -122,29 +128,55 @@ class ConfigList(GUIComponent):
 
 	list = property(getList, setList)
 
-	def moveTop(self):
+	# --- OpenATV compat: new navigation method names ---
+	def enableAutoNavigation(self, enabled):
+		if self.instance is not None:
+			self.instance.enableAutoNavigation(enabled)
+
+	def goTop(self):
 		if self.instance is not None:
 			self.instance.moveSelection(self.instance.moveTop)
 
-	def pageUp(self):
+	def goPageUp(self):
 		if self.instance is not None:
 			self.instance.moveSelection(self.instance.pageUp)
 
-	def moveUp(self):
+	def goLineUp(self):
 		if self.instance is not None:
 			self.instance.moveSelection(self.instance.moveUp)
 
-	def moveDown(self):
+	def goLineDown(self):
 		if self.instance is not None:
 			self.instance.moveSelection(self.instance.moveDown)
 
-	def pageDown(self):
+	def goPageDown(self):
 		if self.instance is not None:
 			self.instance.moveSelection(self.instance.pageDown)
 
-	def moveBottom(self):
+	def goBottom(self):
 		if self.instance is not None:
 			self.instance.moveSelection(self.instance.moveEnd)
+	# --- end OpenATV compat ---
+
+	# Old navigation method names (OpenPLi standard, kept for compatibility).
+	#
+	def moveTop(self):
+		self.goTop()
+
+	def pageUp(self):
+		self.goPageUp()
+
+	def moveUp(self):
+		self.goLineUp()
+
+	def moveDown(self):
+		self.goLineDown()
+
+	def pageDown(self):
+		self.goPageDown()
+
+	def moveBottom(self):
+		self.goBottom()
 	
 	def applySkin(self, desktop, screen):
 		if self.skinAttributes is not None:
@@ -282,7 +314,10 @@ class ConfigListScreen:
 			x()
 
 	def noNativeKeys(self):
-		self["config"].instance.allowNativeKeys(False)
+		# --- OpenATV compat: instance guard ---
+		if self["config"].instance:
+			self["config"].instance.allowNativeKeys(False)
+		# --- end OpenATV compat ---
 
 	def handleInputHelpers(self):
 		currConfig = self["config"].getCurrent()
@@ -291,9 +326,6 @@ class ConfigListScreen:
 				self["editConfigActions"].setEnabled(True)
 			else:
 				self["editConfigActions"].setEnabled(False)
-			if isinstance(currConfig[1], (ConfigText, ConfigMacText)) and "HelpWindow" in self and currConfig[1].help_window and currConfig[1].help_window.instance is not None:
-				helpwindowpos = self["HelpWindow"].getPosition()
-				currConfig[1].help_window.instance.move(ePoint(helpwindowpos[0], helpwindowpos[1]))
 			if isinstance(currConfig[1], ConfigText):
 				self.showVirtualKeyBoard(True)
 			else:
@@ -315,7 +347,7 @@ class ConfigListScreen:
 	def displayHelp(self, state):
 		if "config" in self and "HelpWindow" in self and self["config"].getCurrent() is not None and len(self["config"].getCurrent()) > 1:
 			currConf = self["config"].getCurrent()[1]
-			if isinstance(currConf, (ConfigText, ConfigMacText)) and currConf.help_window is not None and currConf.help_window.instance is not None:
+			if isinstance(currConf, (ConfigText, ConfigMacText, ConfigPassword)) and currConf.help_window is not None and currConf.help_window.instance is not None:
 				if state:
 					currConf.help_window.show()
 				else:
@@ -362,6 +394,22 @@ class ConfigListScreen:
 			self["config"].invalidateCurrent()
 			if answer[1] != prev:
 				self.entryChanged()
+
+	def keyMenu(self):
+		currConfig = self["config"].getCurrent()
+		if currConfig and currConfig[1].enabled and hasattr(currConfig[1], "description") and len(currConfig[1].choices.choices) > 1:
+			self.session.openWithCallback(
+				self.keySelectionCallback, ChoiceBox, title=currConfig[0],
+				list=list(zip(currConfig[1].description, currConfig[1].choices)),
+				selection=currConfig[1].getIndex(),
+				keys=[]
+			)
+
+	def keyMenuCallback(self, answer):
+		if answer:
+			self["config"].getCurrent()[1].value = answer[1]
+			self["config"].invalidateCurrent()
+			self.entryChanged()
 
 	def keyTop(self):
 		self["config"].moveTop()

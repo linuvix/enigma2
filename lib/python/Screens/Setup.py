@@ -112,7 +112,24 @@ class Setup(ConfigListScreen, Screen, HelpableScreen):
 		else:
 			itemText = indent + (_(x) if (x := element.get("text")) else "* fix me *")
 			itemDescription = _(x) if (x := element.get("description")) else ""
-		item = eval(element.text or "")
+		# --- FIX A: tolerate whitespace-only item bodies (headings) ---------
+		# The original code was:
+		#     item = eval(element.text or "")
+		# which raises SyntaxError: invalid syntax (<string>, line 0)
+		# whenever element.text is whitespace-only (e.g. a heading written as
+		# "<item text='Foo'>\n</item>"). We treat whitespace-only text as an
+		# empty body so it becomes a heading, matching the intent and what
+		# recent OpenATV does. Real expressions are still eval'd.
+		raw = element.text
+		if raw is None or not raw.strip():
+			item = ""
+		else:
+			try:
+				item = eval(raw)
+			except Exception as err:
+				print("[Setup] Error evaluating item body %r: %s" % (raw, err))
+				item = ""
+		# --------------------------------------------------------------------
 		if item == "":
 			self.list.append((self.formatItemText(itemText),))  # Add the comment line to the config list.
 		elif not isinstance(item, ConfigNothing):
@@ -144,14 +161,28 @@ class Setup(ConfigListScreen, Screen, HelpableScreen):
 				if negate:
 					require = require[1:]
 				if require.startswith("config."):
-					item = eval(require)
-					result = bool(item.value and item.value not in ("0", "Disable", "disable", "False", "false", "No", "no", "Off", "off"))
+					# --- FIX A: don't let a malformed requires= kill the screen
+					try:
+						item = eval(require)
+						result = bool(item.value and item.value not in ("0", "Disable", "disable", "False", "false", "No", "no", "Off", "off"))
+					except Exception as err:
+						print("[Setup] Error evaluating requires %r: %s" % (require, err))
+						return False
+					# ---------------------------------------------------------
 				else:
 					result = bool(BoxInfo.getItem(require, False))
 				if require and negate == result:  # The item requirements are not met.
 					return False
 		conditional = element.get("conditional")
-		return not conditional or eval(conditional)
+		# --- FIX A: don't let a malformed conditional= kill the screen -----
+		if conditional:
+			try:
+				return bool(eval(conditional))
+			except Exception as err:
+				print("[Setup] Error evaluating conditional %r: %s" % (conditional, err))
+				return False
+		return True
+		# --------------------------------------------------------------------
 
 	def layoutFinished(self):
 		if not self["config"]:

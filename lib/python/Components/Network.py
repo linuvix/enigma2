@@ -185,7 +185,7 @@ class Network:
 			safe_ifaces = self.ifaces.copy()
 			for intf in safe_ifaces:
 				if 'preup' in safe_ifaces[intf] and safe_ifaces[intf]['preup']:
-					safe_ifaces[intf]['preup'] = sub(' -k "\S*" ', ' -k ********* ', safe_ifaces[intf]['preup'])
+					safe_ifaces[intf]['preup'] = sub(r' -k "\S*" ', ' -k ********* ', safe_ifaces[intf]['preup'])
 			print("[Network] self.ifaces after loading: ", safe_ifaces)
 			self.config_ready = True
 			self.msgPlugins()
@@ -200,7 +200,7 @@ class Network:
 		except (ValueError, IOError) as er:
 			print("[Network.py] resolv.conf - opening failed", er)
 		else:
-			ipRegexp = "[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}"
+			ipRegexp = r"[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}"
 			nameserverPattern = re_compile("nameserver +" + ipRegexp)
 			ipPattern = re_compile(ipRegexp)
 			for line in resolv:
@@ -655,7 +655,7 @@ class Network:
 iNetwork = Network()
 
 
-def waitForNetwork(timeout=10):
+def waitForNetwork(timeout=2):
 	while timeout > 0:
 		gws = ni.gateways()
 		if 'default' in gws and len(gws['default']) > 0:

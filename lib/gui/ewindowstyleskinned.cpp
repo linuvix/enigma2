@@ -8,16 +8,19 @@ DEFINE_REF(eWindowStyleSkinned);
 
 eWindowStyleSkinned::eWindowStyleSkinned()
 {
-	// m_background_color = gRGB(0x808080);
-
 	// TODO: initialize colors!!
 	m_listbox_border_set = 0;
+
+	for (int i = 0; i < colMax; ++i)
+	{
+		m_gradient_set[i] = false;
+		m_gradient_direction[i] = 0;
+		m_gradient_alphablend[i] = false;
+	}
 }
 
 void eWindowStyleSkinned::handleNewSize(eWindow *wnd, eSize &size, eSize &offset)
 {
-//	eDebug("[eWindowStyleSkinned] handle new size: %d x %d", size.width(), size.height());
-
 	size = eSize(
 			size.width() + m_border[bsWindow].m_border_left + m_border[bsWindow].m_border_right,
 			size.height() + m_border[bsWindow].m_border_top + m_border[bsWindow].m_border_bottom
@@ -48,33 +51,52 @@ void eWindowStyleSkinned::paintWindowDecoration(eWindow *wnd, gPainter &painter,
 
 void eWindowStyleSkinned::paintBackground(gPainter &painter, const ePoint &offset, const eSize &size)
 {
-	painter.setBackgroundColor(m_color[colBackground]);
+	if (m_gradient_set[colBackground] && m_gradient_colors[colBackground].size() >= 2)
+		painter.setGradient(m_gradient_colors[colBackground], m_gradient_direction[colBackground], m_gradient_alphablend[colBackground]);
+	else
+		painter.setBackgroundColor(m_color[colBackground]);
 	painter.clear();
 }
 
 void eWindowStyleSkinned::setStyle(gPainter &painter, int what)
 {
+	int bgIndex = -1;
+	int fgIndex = -1;
+
 	switch (what)
 	{
 	case styleLabel:
 		painter.setForegroundColor(m_color[colLabelForeground]);
-		break;
+		return;
 	case styleListboxSelected:
-		painter.setForegroundColor(m_color[colListboxSelectedForeground]);
-		painter.setBackgroundColor(m_color[colListboxSelectedBackground]);
+		fgIndex = colListboxSelectedForeground;
+		bgIndex = colListboxSelectedBackground;
 		break;
 	case styleListboxNormal:
-		painter.setForegroundColor(m_color[colListboxForeground]);
-		painter.setBackgroundColor(m_color[colListboxBackground]);
+		fgIndex = colListboxForeground;
+		bgIndex = colListboxBackground;
 		break;
 	case styleListboxMarked:
-		painter.setForegroundColor(m_color[colListboxMarkedForeground]);
-		painter.setBackgroundColor(m_color[colListboxMarkedBackground]);
+		fgIndex = colListboxMarkedForeground;
+		bgIndex = colListboxMarkedBackground;
 		break;
 	case styleListboxMarkedAndSelected:
-		painter.setForegroundColor(m_color[colListboxMarkedAndSelectedForeground]);
-		painter.setBackgroundColor(m_color[colListboxMarkedAndSelectedBackground]);
+		fgIndex = colListboxMarkedAndSelectedForeground;
+		bgIndex = colListboxMarkedAndSelectedBackground;
 		break;
+	default:
+		return;
+	}
+
+	if (fgIndex >= 0)
+		painter.setForegroundColor(m_color[fgIndex]);
+
+	if (bgIndex >= 0)
+	{
+		if (m_gradient_set[bgIndex] && m_gradient_colors[bgIndex].size() >= 2)
+			painter.setGradient(m_gradient_colors[bgIndex], m_gradient_direction[bgIndex], m_gradient_alphablend[bgIndex]);
+		else
+			painter.setBackgroundColor(m_color[bgIndex]);
 	}
 }
 
@@ -245,7 +267,6 @@ void eWindowStyleSkinned::setPixmap(int bs, int bp, gPixmap &pixmap)
 			m_border[bs].m_pixmap[i] = &pixmap;
 	}
 
-		/* recalc border sizes */
 	m_border[bs].m_border_top = 0;
 	m_border[bs].m_border_left = 0;
 	m_border[bs].m_border_bottom = 0;
@@ -269,11 +290,6 @@ void eWindowStyleSkinned::setPixmap(int bs, int bp, gPixmap &pixmap)
 		m_border[bs].m_border_right = m_border[bs].m_pixmap[5]->size().width();
 	else
 		m_border[bs].m_border_right = 0;
-
-/*	eDebug("[eWindowStyleSkinned] recalced border size for %d: %d:%d %d:%d",
-		bs,
-		m_border[bs].m_border_left, m_border[bs].m_border_top,
-		m_border[bs].m_border_right, m_border[bs].m_border_bottom);  */
 }
 
 void eWindowStyleSkinned::setColor(int what, const gRGB &col)
@@ -293,6 +309,38 @@ gRGB eWindowStyleSkinned::getColor(int what)
 	return nullptr;
 }
 
+void eWindowStyleSkinned::setGradient(int what, const std::vector<gRGB> &colors, uint8_t direction, bool alphablend)
+{
+	if ((what < colMax) && (what >= 0) && colors.size() >= 2)
+	{
+		m_gradient_colors[what] = colors;
+		m_gradient_direction[what] = direction;
+		m_gradient_alphablend[what] = alphablend;
+		m_gradient_set[what] = true;
+	}
+}
+
+bool eWindowStyleSkinned::getGradient(int what, std::vector<gRGB> &colors, uint8_t &direction, bool &alphablend)
+{
+	if ((what < colMax) && (what >= 0) && m_gradient_set[what])
+	{
+		colors = m_gradient_colors[what];
+		direction = m_gradient_direction[what];
+		alphablend = m_gradient_alphablend[what];
+		return true;
+	}
+	return false;
+}
+
+void eWindowStyleSkinned::clearGradient(int what)
+{
+	if ((what < colMax) && (what >= 0))
+	{
+		m_gradient_set[what] = false;
+		m_gradient_colors[what].clear();
+	}
+}
+
 void eWindowStyleSkinned::setTitleOffset(const eSize &offset)
 {
 	m_title_offset = offset;
@@ -302,4 +350,3 @@ void eWindowStyleSkinned::setTitleFont(gFont *fnt)
 {
 	m_fnt = fnt;
 }
-
