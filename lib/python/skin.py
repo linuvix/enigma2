@@ -26,17 +26,17 @@ DISPLAY_SKIN_ID = 1
 
 domScreens = {}
 colors = {
-	"key_back": gRGB(0x00313131),
-	"key_blue": gRGB(0x0018188b),
-	"key_green": gRGB(0x001f771f),
-	"key_red": gRGB(0x009f1313),
-	"key_text": gRGB(0x00ffffff),
-	"key_yellow": gRGB(0x00a08500)
+ "key_back": gRGB(0x00313131),
+ "key_blue": gRGB(0x0018188b),
+ "key_green": gRGB(0x001f771f),
+ "key_red": gRGB(0x009f1313),
+ "key_text": gRGB(0x00ffffff),
+ "key_yellow": gRGB(0x00a08500)
 }
 gradients = {}
 BodyFont = ("Regular", 20, 24, 18)
 fonts = {
-	"Body": BodyFont
+ "Body": BodyFont
 }
 menus = {}
 menuicons = {}
@@ -57,6 +57,19 @@ config.skin.display_skin = ConfigText(default=DEFAULT_DISPLAY_SKIN)
 currentPrimarySkin = None
 currentDisplaySkin = None
 onLoadCallbacks = []
+
+
+class _ReloadCallbacks(list):
+	def __call__(self):
+		for callback in tuple(self):
+			if callable(callback):
+				try:
+					callback()
+				except Exception as err:
+					print("[Skin] onReload callback error: %s" % err)
+
+
+onReload = _ReloadCallbacks()
 runCallbacks = False
 
 
@@ -168,16 +181,16 @@ def reloadSkins():
 	global domScreens, colors, gradients, fonts, menus, menuicons, parameters, screens, setups, switchPixmap
 	domScreens.clear()
 	colors = {
-		"key_back": gRGB(0x00313131),
-		"key_blue": gRGB(0x0018188b),
-		"key_green": gRGB(0x001f771f),
-		"key_red": gRGB(0x009f1313),
-		"key_text": gRGB(0x00ffffff),
-		"key_yellow": gRGB(0x00a08500)
+	 "key_back": gRGB(0x00313131),
+	 "key_blue": gRGB(0x0018188b),
+	 "key_green": gRGB(0x001f771f),
+	 "key_red": gRGB(0x009f1313),
+	 "key_text": gRGB(0x00ffffff),
+	 "key_yellow": gRGB(0x00a08500)
 	}
 	gradients.clear()
 	fonts = {
-		"Body": BodyFont
+	 "Body": BodyFont
 	}
 	menus.clear()
 	menuicons.clear()
@@ -186,6 +199,7 @@ def reloadSkins():
 	setups.clear()
 	switchPixmap.clear()
 	InitSkins()
+	onReload()
 
 
 def addCallback(callback):
@@ -275,14 +289,14 @@ def parseRadius(value):
 	if len(data) == 2:
 		edges = [x.strip() for x in data[1].split(",")]
 		edgesMask = {
-			"topLeft": eWidget.RADIUS_TOP_LEFT,
-			"topRight": eWidget.RADIUS_TOP_RIGHT,
-			"top": eWidget.RADIUS_TOP,
-			"bottomLeft": eWidget.RADIUS_BOTTOM_LEFT,
-			"bottomRight": eWidget.RADIUS_BOTTOM_RIGHT,
-			"bottom": eWidget.RADIUS_BOTTOM,
-			"left": eWidget.RADIUS_LEFT,
-			"right": eWidget.RADIUS_RIGHT,
+		 "topLeft": eWidget.RADIUS_TOP_LEFT,
+		 "topRight": eWidget.RADIUS_TOP_RIGHT,
+		 "top": eWidget.RADIUS_TOP,
+		 "bottomLeft": eWidget.RADIUS_BOTTOM_LEFT,
+		 "bottomRight": eWidget.RADIUS_BOTTOM_RIGHT,
+		 "bottom": eWidget.RADIUS_BOTTOM,
+		 "left": eWidget.RADIUS_LEFT,
+		 "right": eWidget.RADIUS_RIGHT,
 		}
 		edgeValue = 0
 		for e in edges:
@@ -334,7 +348,7 @@ def parseColor(s):
 
 def parseGradient(value):
 	def resolveColor(v):
-		# Accept #aarrggbb, #rrggbb, or a name from the colors dict.
+	 
 		if v and v[0] == "#" and len(v) in (9, 7):
 			try:
 				return gRGB(int(v[1:], 0x10))
@@ -342,7 +356,7 @@ def parseGradient(value):
 				return gRGB(0x00000000)
 		if v in colors:
 			return colors[v]
-		# If the token is itself a gradient name, take its start colour.
+  
 		if v in gradients:
 			first = gradients[v].split(",")[0].strip()
 			if first and first[0] == "#" and len(first) in (9, 7):
@@ -363,7 +377,7 @@ def parseGradient(value):
 			return True
 		return False
 
-	# If the whole value is a gradient name, take that definition.
+ 
 	value = gradients.get(value, value)
 	data = [x.strip() for x in value.split(",")]
 
@@ -379,9 +393,9 @@ def parseGradient(value):
 		else:
 			break
 
-	# alphaBlend MUST be a Python bool - SWIG-typed setBackgroundGradient() /
-	# setForegroundGradient() / setGradient() reject int for the alphablend
-	# argument with "TypeError: argument N of type 'bool'".
+ 
+ 
+ 
 	if consumed < 2:
 		return (gRGB(0x00000000), gRGB(0x00000000), gRGB(0x00000000), eWidget.GRADIENT_VERTICAL, False)
 
@@ -394,8 +408,8 @@ def parseGradient(value):
 
 	if remaining:
 		direction = {
-			"horizontal": eWidget.GRADIENT_HORIZONTAL,
-			"vertical": eWidget.GRADIENT_VERTICAL
+		 "horizontal": eWidget.GRADIENT_HORIZONTAL,
+		 "vertical": eWidget.GRADIENT_VERTICAL
 		}.get(remaining[0].lower(), eWidget.GRADIENT_VERTICAL)
 
 		if len(remaining) > 1:
@@ -598,16 +612,16 @@ class AttributeParser:
 		self.guiObject.setScrollbarBackgroundPicture(loadPixmap(value, self.desktop))
 
 	def alphatest(self, value):
-		# 'alphatest' only makes sense on widgets that actually handle it (e.g.
-		# ePixmap). Skins sometimes set it on containers by mistake - skip
-		# quietly instead of printing a spurious error for every such widget.
+	 
+	 
+	 
 		if not hasattr(self.guiObject, "setAlphatest"):
 			return
 		try:
 			self.guiObject.setAlphatest({
-				"on": BT_ALPHATEST,
-				"off": 0,
-				"blend": BT_ALPHABLEND
+			 "on": BT_ALPHATEST,
+			 "off": 0,
+			 "blend": BT_ALPHABLEND
 			}[value])
 		except KeyError:
 			print("[Skin] Error: Invalid alphatest '%s'!  Must be one of 'on', 'off' or 'blend'." % value)
@@ -619,27 +633,27 @@ class AttributeParser:
 		base = BT_SCALE | BT_KEEP_ASPECT_RATIO
 		try:
 			self.guiObject.setPixmapScale({
-				"none": 0,
-				"scale": BT_SCALE,
-				"scaleKeepAspect": base,
-				"scaleLeftTop": base | BT_HALIGN_LEFT | BT_VALIGN_TOP,
-				"scaleLeftCenter": base | BT_HALIGN_LEFT | BT_VALIGN_CENTER,
-				"scaleLeftBottom": base | BT_HALIGN_LEFT | BT_VALIGN_BOTTOM,
-				"scaleCenterTop": base | BT_HALIGN_CENTER | BT_VALIGN_TOP,
-				"scaleCenter": base | BT_HALIGN_CENTER | BT_VALIGN_CENTER,
-				"scaleCenterBottom": base | BT_HALIGN_CENTER | BT_VALIGN_BOTTOM,
-				"scaleRightTop": base | BT_HALIGN_RIGHT | BT_VALIGN_TOP,
-				"scaleRightCenter": base | BT_HALIGN_RIGHT | BT_VALIGN_CENTER,
-				"scaleRightBottom": base | BT_HALIGN_RIGHT | BT_VALIGN_BOTTOM,
-				"moveLeftTop": BT_HALIGN_LEFT | BT_VALIGN_TOP,
-				"moveLeftCenter": BT_HALIGN_LEFT | BT_VALIGN_CENTER,
-				"moveLeftBottom": BT_HALIGN_LEFT | BT_VALIGN_BOTTOM,
-				"moveCenterTop": BT_HALIGN_CENTER | BT_VALIGN_TOP,
-				"moveCenter": BT_HALIGN_CENTER | BT_VALIGN_CENTER,
-				"moveCenterBottom": BT_HALIGN_CENTER | BT_VALIGN_BOTTOM,
-				"moveRightTop": BT_HALIGN_RIGHT | BT_VALIGN_TOP,
-				"moveRightCenter": BT_HALIGN_RIGHT | BT_VALIGN_CENTER,
-				"moveRightBottom": BT_HALIGN_RIGHT | BT_VALIGN_BOTTOM
+			 "none": 0,
+			 "scale": BT_SCALE,
+			 "scaleKeepAspect": base,
+			 "scaleLeftTop": base | BT_HALIGN_LEFT | BT_VALIGN_TOP,
+			 "scaleLeftCenter": base | BT_HALIGN_LEFT | BT_VALIGN_CENTER,
+			 "scaleLeftBottom": base | BT_HALIGN_LEFT | BT_VALIGN_BOTTOM,
+			 "scaleCenterTop": base | BT_HALIGN_CENTER | BT_VALIGN_TOP,
+			 "scaleCenter": base | BT_HALIGN_CENTER | BT_VALIGN_CENTER,
+			 "scaleCenterBottom": base | BT_HALIGN_CENTER | BT_VALIGN_BOTTOM,
+			 "scaleRightTop": base | BT_HALIGN_RIGHT | BT_VALIGN_TOP,
+			 "scaleRightCenter": base | BT_HALIGN_RIGHT | BT_VALIGN_CENTER,
+			 "scaleRightBottom": base | BT_HALIGN_RIGHT | BT_VALIGN_BOTTOM,
+			 "moveLeftTop": BT_HALIGN_LEFT | BT_VALIGN_TOP,
+			 "moveLeftCenter": BT_HALIGN_LEFT | BT_VALIGN_CENTER,
+			 "moveLeftBottom": BT_HALIGN_LEFT | BT_VALIGN_BOTTOM,
+			 "moveCenterTop": BT_HALIGN_CENTER | BT_VALIGN_TOP,
+			 "moveCenter": BT_HALIGN_CENTER | BT_VALIGN_CENTER,
+			 "moveCenterBottom": BT_HALIGN_CENTER | BT_VALIGN_BOTTOM,
+			 "moveRightTop": BT_HALIGN_RIGHT | BT_VALIGN_TOP,
+			 "moveRightCenter": BT_HALIGN_RIGHT | BT_VALIGN_CENTER,
+			 "moveRightBottom": BT_HALIGN_RIGHT | BT_VALIGN_BOTTOM
 			}[value])
 		except KeyError:
 			print("[Skin] Error: Invalid scale '%s'!  Must be one of 'none', 'scale', 'scaleKeepAspect', 'scaleLeftTop', 'scaleLeftCenter', 'scaleLeftBotton', 'scaleCenterTop', 'scaleCenter', 'scaleCenterBotton', 'scaleRightTop', 'scaleRightCenter', 'scaleRightBottom', 'moveLeftTop', 'moveLeftCenter', 'moveLeftBotton', 'moveCenterTop', 'moveCenter', 'moveCenterBottom', 'moveRightTop', 'moveRightCenter', 'moveRightBottom' ('Center'/'Centre'/'Middle' are equivalent)." % value)
@@ -647,28 +661,28 @@ class AttributeParser:
 	def orientation(self, value):
 		try:
 			self.guiObject.setOrientation(*{
-				"orVertical": (self.guiObject.orVertical, False),
-				"orTopToBottom": (self.guiObject.orVertical, False),
-				"orBottomToTop": (self.guiObject.orVertical, True),
-				"orHorizontal": (self.guiObject.orHorizontal, False),
-				"orLeftToRight": (self.guiObject.orHorizontal, False),
-				"orRightToLeft": (self.guiObject.orHorizontal, True)
+			 "orVertical": (self.guiObject.orVertical, False),
+			 "orTopToBottom": (self.guiObject.orVertical, False),
+			 "orBottomToTop": (self.guiObject.orVertical, True),
+			 "orHorizontal": (self.guiObject.orHorizontal, False),
+			 "orLeftToRight": (self.guiObject.orHorizontal, False),
+			 "orRightToLeft": (self.guiObject.orHorizontal, True)
 			}[value])
 		except KeyError:
 			print("[Skin] Error: Invalid orientation '%s'!  Must be one of 'orVertical', 'orTopToBottom', 'orBottomToTop', 'orHorizontal', 'orLeftToRight' or 'orRightToLeft'." % value)
 
-	def listOrientation(self, value):  # Used by eListbox.
-		# eListbox enum in OpenPLi: orHorizontal=0, orVertical=1, orGrid=2.
-		# Do NOT copy the OpenATV numeric values (OpenATV uses orVertical=1, orHorizontal=2, orGrid=3).
+	def listOrientation(self, value):  
+	 
+	 
 		options = {
-			"orVertical": self.guiObject.orVertical,
-			"vertical": self.guiObject.orVertical,
-			"orTopToBottom": self.guiObject.orVertical,
-			"orHorizontal": self.guiObject.orHorizontal,
-			"horizontal": self.guiObject.orHorizontal,
-			"orLeftToRight": self.guiObject.orHorizontal,
-			"orGrid": self.guiObject.orGrid,
-			"grid": self.guiObject.orGrid,
+		 "orVertical": self.guiObject.orVertical,
+		 "vertical": self.guiObject.orVertical,
+		 "orTopToBottom": self.guiObject.orVertical,
+		 "orHorizontal": self.guiObject.orHorizontal,
+		 "horizontal": self.guiObject.orHorizontal,
+		 "orLeftToRight": self.guiObject.orHorizontal,
+		 "orGrid": self.guiObject.orGrid,
+		 "grid": self.guiObject.orGrid,
 		}
 		if value in options:
 			self.guiObject.setOrientation(options[value])
@@ -677,14 +691,14 @@ class AttributeParser:
 		self.guiObject.setOrientation(self.guiObject.orVertical)
 
 	def valign(self, value):
-		# eListbox exposes its own align* enum (alignTop/alignCenter/alignBottom)
-		# from the header; all other widgets that have setVAlign keep using the
-		# classic eTextPara-style 0/1/2 ordering. Prefer the object's own enum
-		# when it provides one, otherwise fall back to the old integers.
+	 
+	 
+	 
+	 
 		align_map = {
-			"top": getattr(self.guiObject, "alignTop", 0),
-			"center": getattr(self.guiObject, "alignCenter", 1),
-			"bottom": getattr(self.guiObject, "alignBottom", 2),
+		 "top": getattr(self.guiObject, "alignTop", 0),
+		 "center": getattr(self.guiObject, "alignCenter", 1),
+		 "bottom": getattr(self.guiObject, "alignBottom", 2),
 		}
 		if hasattr(self.guiObject, "setVAlign"):
 			if value in align_map:
@@ -696,13 +710,13 @@ class AttributeParser:
 		print("[Skin] Attribute 'valign' with value '%s' not supported by %s" % (value, self.guiObject.__class__.__name__))
 
 	def halign(self, value):
-		# See valign(): eListbox brings its own align* enum, other widgets keep
-		# the classic 0/1/2/3 mapping.
+	 
+	 
 		align_map = {
-			"left": getattr(self.guiObject, "alignLeft", 0),
-			"center": getattr(self.guiObject, "alignCenter", 1),
-			"right": getattr(self.guiObject, "alignRight", 2),
-			"block": getattr(self.guiObject, "alignBlock", 3),
+		 "left": getattr(self.guiObject, "alignLeft", 0),
+		 "center": getattr(self.guiObject, "alignCenter", 1),
+		 "right": getattr(self.guiObject, "alignRight", 2),
+		 "block": getattr(self.guiObject, "alignBlock", 3),
 		}
 		if hasattr(self.guiObject, "setHAlign"):
 			if value in align_map:
@@ -727,10 +741,10 @@ class AttributeParser:
 		pass
 
 	def flags(self, value):
-		# Some ATV-derived plugins ship embedded skins that reference flag
-		# names which do not exist in any Enigma2 build - not even OpenATV.
-		# Accept these silently so a broken third-party skin doesn't spam the
-		# log with errors that look like they're our fault.
+	 
+	 
+	 
+	 
 		IGNORED_FLAGS = {"wfBorder"}
 		flags = value.split(",")
 		for f in flags:
@@ -848,11 +862,11 @@ class AttributeParser:
 	def scrollbarMode(self, value):
 		try:
 			self.guiObject.setScrollbarMode({
-				"showOnDemand": self.guiObject.showOnDemand,
-				"showAlways": self.guiObject.showAlways,
-				"showNever": self.guiObject.showNever,
-				"showLeft": self.guiObject.showLeft,
-				"showTop": self.guiObject.showTop
+			 "showOnDemand": self.guiObject.showOnDemand,
+			 "showAlways": self.guiObject.showAlways,
+			 "showNever": self.guiObject.showNever,
+			 "showLeft": self.guiObject.showLeft,
+			 "showTop": self.guiObject.showTop
 			}[value])
 		except KeyError:
 			print("[Skin] Error: Invalid scrollbarMode '%s'!  Must be one of 'showOnDemand', 'showAlways', 'showNever', 'showLeft' or 'showTop'." % value)
@@ -1482,12 +1496,12 @@ def readSkin(screen, skin, names, desktop):
 		processScreen(widget, c)
 
 	processors = {
-		None: processNone,
-		"widget": processWidget,
-		"applet": processApplet,
-		"eLabel": processLabel,
-		"ePixmap": processPixmap,
-		"panel": processPanel
+	 None: processNone,
+	 "widget": processWidget,
+	 "applet": processApplet,
+	 "eLabel": processLabel,
+	 "ePixmap": processPixmap,
+	 "panel": processPanel
 	}
 
 	try:
