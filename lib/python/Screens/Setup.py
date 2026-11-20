@@ -44,16 +44,35 @@ class Setup(ConfigListScreen, Screen, HelpableScreen):
 			self["config"].onSelectionChanged.append(self.selectionChanged)
 
 	def changedEntry(self):
-		current = self["config"].getCurrent()
-		if current[1].isChanged():
-			self.manipulatedItems.append(current)  # keep track of all manipulated items including ones that have been removed from self["config"].list
-		elif current in self.manipulatedItems:
-			self.manipulatedItems.remove(current)
-		if isinstance(current[1], (ConfigBoolean, ConfigSelection)):
-			self.createSetup()
-		ConfigListScreen.changedEntry(self)  # force summary update immediately, not just on select/deselect
+		# Defensive: this is invoked from ConfigListScreen/ConfigList internals
+		# on every selection/value change.  A closed-source plugin that overrides
+		# getCurrent()/createSetup() can throw here; the GUI must not die.
+		try:
+			current = self["config"].getCurrent()
+			if current[1].isChanged():
+				self.manipulatedItems.append(current)  # keep track of all manipulated items including ones that have been removed from self["config"].list
+			elif current in self.manipulatedItems:
+				self.manipulatedItems.remove(current)
+			if isinstance(current[1], (ConfigBoolean, ConfigSelection)):
+				self.createSetup()
+			ConfigListScreen.changedEntry(self)  # force summary update immediately, not just on select/deselect
+		except Exception as e:
+			print("[Setup] changedEntry raised %s: %s"
+				% (e.__class__.__name__, e))
+			import traceback; traceback.print_exc()
 
 	def createSetup(self, appendItems=None, prependItems=None):
+		# Defensive: called from __init__ and from changedEntry.  A malformed
+		# setup.xml (bad eval in conditional/requires, bad addItem) must not
+		# prevent the screen from opening.
+		try:
+			self._createSetup_inner(appendItems, prependItems)
+		except Exception as e:
+			print("[Setup] createSetup raised %s: %s"
+				% (e.__class__.__name__, e))
+			import traceback; traceback.print_exc()
+
+	def _createSetup_inner(self, appendItems=None, prependItems=None):
 		if self.setup:
 			oldList = self.list
 			self.showDefaultChanged = False
@@ -112,7 +131,24 @@ class Setup(ConfigListScreen, Screen, HelpableScreen):
 		else:
 			itemText = indent + (_(x) if (x := element.get("text")) else "* fix me *")
 			itemDescription = _(x) if (x := element.get("description")) else ""
-		item = eval(element.text or "")
+		# --- FIX A: tolerate whitespace-only item bodies (headings) ---------
+		# The original code was:
+		#     item = eval(element.text or "")
+		# which raises SyntaxError: invalid syntax (<string>, line 0)
+		# whenever element.text is whitespace-only (e.g. a heading written as
+		# "<item text='Foo'>\n</item>"). We treat whitespace-only text as an
+		# empty body so it becomes a heading, matching the intent and what
+		# recent OpenATV does. Real expressions are still eval'd.
+		raw = element.text
+		if raw is None or not raw.strip():
+			item = ""
+		else:
+			try:
+				item = eval(raw)
+			except Exception as err:
+				print("[Setup] Error evaluating item body %r: %s" % (raw, err))
+				item = ""
+		# --------------------------------------------------------------------
 		if item == "":
 			self.list.append((self.formatItemText(itemText),))  # Add the comment line to the config list.
 		elif not isinstance(item, ConfigNothing):
@@ -144,26 +180,61 @@ class Setup(ConfigListScreen, Screen, HelpableScreen):
 				if negate:
 					require = require[1:]
 				if require.startswith("config."):
-					item = eval(require)
-					result = bool(item.value and item.value not in ("0", "Disable", "disable", "False", "false", "No", "no", "Off", "off"))
+					# --- FIX A: don't let a malformed requires= kill the screen
+					try:
+						item = eval(require)
+						result = bool(item.value and item.value not in ("0", "Disable", "disable", "False", "false", "No", "no", "Off", "off"))
+					except Exception as err:
+						print("[Setup] Error evaluating requires %r: %s" % (require, err))
+						return False
+					# ---------------------------------------------------------
 				else:
 					result = bool(BoxInfo.getItem(require, False))
 				if require and negate == result:  # The item requirements are not met.
 					return False
 		conditional = element.get("conditional")
-		return not conditional or eval(conditional)
+		# --- FIX A: don't let a malformed conditional= kill the screen -----
+		if conditional:
+			try:
+				return bool(eval(conditional))
+			except Exception as err:
+				print("[Setup] Error evaluating conditional %r: %s" % (conditional, err))
+				return False
+		return True
+		# --------------------------------------------------------------------
 
 	def layoutFinished(self):
-		if not self["config"]:
-			print("[Setup] No setup items available!")
+		try:
+			if not self["config"]:
+				print("[Setup] No setup items available!")
+		except Exception as e:
+			print("[Setup] layoutFinished raised %s: %s"
+				% (e.__class__.__name__, e))
+			import traceback; traceback.print_exc()
 
 	def selectionChanged(self):
+		# Defensive: invoked from ConfigList internals on navigation.  A plugin
+		# whose getCurrentEntry() throws (Wireguard) must not escape.
 		if self["config"]:
-			self.setFootnote(None)
+			try:
+				self.setFootnote(None)
+			except Exception as e:
+				print("[Setup] selectionChanged -> setFootnote raised %s: %s"
+					% (e.__class__.__name__, e))
+				import traceback; traceback.print_exc()
 
 	def setFootnote(self, footnote):
 		if footnote is None:
-			if self.getCurrentEntry().endswith("*"):
+			# Defensive: getCurrentEntry() may throw in a closed-source plugin
+			# (e.g. Wireguard's IndexError on an empty config list).
+			try:
+				restart_required = self.getCurrentEntry().endswith("*")
+			except Exception as e:
+				print("[Setup] setFootnote -> getCurrentEntry raised %s: %s"
+					% (e.__class__.__name__, e))
+				import traceback; traceback.print_exc()
+				restart_required = False
+			if restart_required:
 				self["footnote"].text = _("* = Restart Required")
 				self["footnote"].show()
 			else:
@@ -212,7 +283,12 @@ class SetupSummary(ScreenSummary):
 			self.parent.onChangedEntry.append(self.selectionChanged)
 		if self.selectionChanged not in self.parent["config"].onSelectionChanged:
 			self.parent["config"].onSelectionChanged.append(self.selectionChanged)
-		self.selectionChanged()
+		try:
+			self.selectionChanged()
+		except Exception as e:
+			print("[SetupSummary] addWatcher -> selectionChanged raised %s: %s"
+				% (e.__class__.__name__, e))
+			import traceback; traceback.print_exc()
 
 	def removeWatcher(self):
 		if self.selectionChanged in self.parent.onChangedEntry:
@@ -221,10 +297,28 @@ class SetupSummary(ScreenSummary):
 			self.parent["config"].onSelectionChanged.remove(self.selectionChanged)
 
 	def selectionChanged(self):
-		self["entry"].text = self.parent.getCurrentEntry()  # DEBUG: Proposed for new summary screens.
-		self["value"].text = self.parent.getCurrentValue()  # DEBUG: Proposed for new summary screens.
-		self["SetupEntry"].text = self.parent.getCurrentEntry()
-		self["SetupValue"].text = self.parent.getCurrentValue()
+		# Defensive: a closed-source plugin's getCurrentEntry()/getCurrentValue()
+		# can raise (e.g. Wireguard's IndexError on empty config lists).  This
+		# callback is invoked from ConfigList internals during navigation,
+		# not only from Screen.show(), so it must not be allowed to escape.
+		try:
+			entry = self.parent.getCurrentEntry()
+		except Exception as e:
+			print("[SetupSummary] getCurrentEntry raised %s: %s"
+				% (e.__class__.__name__, e))
+			import traceback; traceback.print_exc()
+			entry = ""
+		try:
+			value = self.parent.getCurrentValue()
+		except Exception as e:
+			print("[SetupSummary] getCurrentValue raised %s: %s"
+				% (e.__class__.__name__, e))
+			import traceback; traceback.print_exc()
+			value = ""
+		self["entry"].text = entry  # DEBUG: Proposed for new summary screens.
+		self["value"].text = value  # DEBUG: Proposed for new summary screens.
+		self["SetupEntry"].text = entry
+		self["SetupValue"].text = value
 
 
 # Read the setup XML file.

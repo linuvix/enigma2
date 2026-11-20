@@ -27,7 +27,6 @@ class Rect:
 		self.w = width
 		self.h = height
 
-	# silly, but backward compatible
 	def left(self):
 		return self.x
 
@@ -129,11 +128,6 @@ class EPGList(GUIComponent):
 		for x in self.onSelChanged:
 			if x is not None:
 				x()
-#				try:
-#					x()
-#				except: # FIXME!!!
-#					print "FIXME in EPGList.selectionChanged"
-#					pass
 
 	GUI_WIDGET = eListbox
 
@@ -235,7 +229,7 @@ class EPGList(GUIComponent):
 		r3 = self.descr_rect
 		t = localtime(beginTime)
 		res = [
-			None, # no private data needed
+			None,
 			(eListboxPythonMultiContent.TYPE_TEXT, r1.x + self.sidesMargin, r1.y, r1.w, r1.h, 0, RT_HALIGN_RIGHT | RT_VALIGN_CENTER, self.days[t[6]]),
 			(eListboxPythonMultiContent.TYPE_TEXT, r2.x + self.sidesMargin, r2.y, r2.w, r1.h, 0, RT_HALIGN_RIGHT | RT_VALIGN_CENTER, "%02d.%02d, %02d:%02d" % (t[2], t[1], t[3], t[4]))
 		]
@@ -266,7 +260,7 @@ class EPGList(GUIComponent):
 		r3 = self.service_rect
 		t = localtime(beginTime)
 		res = [
-			None,  # no private data needed
+			None,
 			(eListboxPythonMultiContent.TYPE_TEXT, r1.x, r1.y, r1.w, r1.h, 0, RT_HALIGN_RIGHT | RT_VALIGN_CENTER, self.days[t[6]]),
 			(eListboxPythonMultiContent.TYPE_TEXT, r2.x, r2.y, r2.w, r1.h, 0, RT_HALIGN_RIGHT | RT_VALIGN_CENTER, "%2d.%02d, %02d:%02d" % (t[2], t[1], t[3], t[4]))
 		]
@@ -284,7 +278,7 @@ class EPGList(GUIComponent):
 		r2 = self.progress_rect
 		r3 = self.descr_rect
 		r4 = self.start_end_rect
-		res = [None] # no private data needed
+		res = [None]
 		if clock_types:
 			res.append((eListboxPythonMultiContent.TYPE_TEXT, r1.x, r1.y, r1.w - self.space * len(clock_types), r1.h, 0, RT_HALIGN_LEFT | RT_VALIGN_CENTER, service_name))
 			for i in range(len(clock_types)):
@@ -332,16 +326,13 @@ class EPGList(GUIComponent):
 		return []
 
 	def fillMultiEPG(self, services, stime=-1):
-		#t = int(time())
 		test = [(service.ref.toString(), 0, stime) for service in services]
 		test.insert(0, 'X0RIBDTCn')
 		self.list = self.queryEPG(test)
 		self.l.setList(self.list)
-		#print(int(time()) - t)
 		self.selectionChanged()
 
 	def updateMultiEPG(self, direction):
-		#t = int(time())
 		test = [x[3] and (x[1], direction, x[3]) or (x[1], direction, 0) for x in self.list]
 		test.insert(0, 'XRIBDTCn')
 		tmp = self.queryEPG(test)
@@ -353,7 +344,6 @@ class EPGList(GUIComponent):
 					self.list[cnt] = (changecount, x[0], x[1], x[2], x[3], x[4], x[5], x[6])
 			cnt += 1
 		self.l.setList(self.list)
-		#print((int(time()) - t)
 		self.selectionChanged()
 
 	def filtering_epg(self, epg_list, filtering):
@@ -454,11 +444,8 @@ class EPGList(GUIComponent):
 			index += 1
 
 	def fillSimilarList(self, refstr, event_id):
-		# t = int(time())
-		# search similar broadcastings
 		if event_id:
 			self.fill_list(self.epgcache.search(('RIBND', 1024, eEPGCache.SIMILAR_BROADCASTINGS_SEARCH, refstr, event_id)))
-		# print(int(time() - t))
 
 	def fill_partial_list(self, event):
 		if event:
@@ -503,11 +490,28 @@ class EPGList(GUIComponent):
 		def setColGap(value):
 			self.colGap = parseScale(value)
 
+		handlers = {
+			"eventItemFont": setEventItemFont,
+			"eventTimeFont": setEventTimeFont,
+			"iconDistance": setIconDistance,
+			"iconShift": setIconShift,
+			"timeWidth": setTimeWidth,
+			"colWidths": setColWidths,
+			"sidesMargin": sidesMargin,
+			"colGap": setColGap,
+		}
+
 		for (attrib, value) in self.skinAttributes[:]:
+			handler = handlers.get(attrib)
+			if handler is None:
+				# Not an EPGList-specific attribute; leave it for
+				# GUIComponent.applySkin to handle (it processes eListbox
+				# attributes like font, foregroundColor, transparent, ...).
+				continue
 			try:
-				locals().get(attrib)(value)
+				handler(value)
 			except (TypeError, ValueError, NameError) as er:
-				print("[EPGList] error in set skin parameters", er)
+				print("[EPGList] error in set skin parameters '%s': %s" % (attrib, er))
 			else:
 				self.skinAttributes.remove((attrib, value))
 

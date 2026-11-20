@@ -58,7 +58,8 @@ class Listbox(Renderer):
 	wrap_around = property(lambda self: self.__wrap_around, setWrapAround)
 
 	def selectionChanged(self):
-		self.source.selectionChanged(self.index)
+		if self.source is not None:
+			self.source.selectionChanged(self.index)
 
 	def getIndex(self):
 		if self.instance is None:
@@ -90,6 +91,8 @@ class Listbox(Renderer):
 				{"showOnDemand": eListbox.showOnDemand,
 				  "showAlways": eListbox.showAlways,
 				  "showNever": eListbox.showNever,
+				  "showLeft": eListbox.showLeft,
+				  "showTop": eListbox.showTop,
 				}[mode]))
 
 	scrollbarMode = property(lambda self: self.__scrollbarMode, setScrollbarMode)

@@ -110,7 +110,10 @@ int eLabel::event(int event, void *data, void *data2)
 			if (!m_nowrap)
 				flags |= gPainter::RT_WRAP;
 
-			if (m_blend)
+			/* When a gradient background is set, blend the text over it
+			   instead of over the flat background colour, otherwise the
+			   gradient is hidden behind a solid rectangle. */
+			if (isGradientSet() || m_blend)
 				flags |= gPainter::RT_BLEND;
 
 				/* if we don't have shadow, m_shadow_offset will be 0,0 */

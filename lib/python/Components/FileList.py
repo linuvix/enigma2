@@ -7,6 +7,14 @@ from enigma import RT_HALIGN_LEFT, eListboxPythonMultiContent, eServiceReference
 from Tools.LoadPixmap import LoadPixmap
 from skin import applySkinFactor, fonts, parameters
 
+# --- OpenATV compatibility layer ---
+FILE_PATH = 0
+FILE_IS_DIR = 1
+FILE_IS_LINK = 2
+FILE_SELECTED = 3
+FILE_NAME = 4
+FILE_DIR_ICON = 5
+# --- end compatibility layer ---
 
 EXTENSIONS = {
 		"dts": "music",
@@ -85,7 +93,7 @@ def FileEntryComponent(name, absolute=None, isDir=False):
 
 
 class FileList(MenuList):
-	def __init__(self, directory, showDirectories=True, showFiles=True, showMountpoints=True, matchingPattern=None, useServiceRef=False, inhibitDirs=False, inhibitMounts=False, isTop=False, enableWrapAround=False, additionalExtensions=None):
+	def __init__(self, directory, showDirectories=True, showFiles=True, showMountpoints=True, matchingPattern=None, useServiceRef=False, inhibitDirs=False, inhibitMounts=False, isTop=False, enableWrapAround=False, additionalExtensions=None, sortDirs=None, sortFiles=None):
 		MenuList.__init__(self, list, enableWrapAround, eListboxPythonMultiContent)
 		self.additional_extensions = additionalExtensions
 		self.mountpoints = []
@@ -113,6 +121,12 @@ class FileList(MenuList):
 		self.l.setFont(0, gFont(font[0], font[1]))
 		self.l.setItemHeight(font[2])
 		self.serviceHandler = eServiceCenter.getInstance()
+
+	def getCurrentIndex(self):
+		"""Compatibility method for OpenATV plugins: return the current selection index."""
+		if self.l.getCurrentSelection() is None:
+			return -1
+		return self.l.getCurrentSelectionIndex()
 
 	def refreshMountpoints(self):
 		self.mountpoints = [os.path.join(p.mountpoint, "") for p in harddiskmanager.getMountedPartitions()]
@@ -339,6 +353,12 @@ class MultiFileSelectList(FileList):
 		self.l.setFont(0, gFont(font[0], font[1]))
 		self.l.setItemHeight(font[2])
 		self.onSelectionChanged = []
+
+	def getCurrentIndex(self):
+		"""Compatibility method for OpenATV plugins: return the current selection index."""
+		if self.l.getCurrentSelection() is None:
+			return -1
+		return self.l.getCurrentSelectionIndex()
 
 	def selectionChanged(self):
 		for f in self.onSelectionChanged:

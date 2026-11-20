@@ -5,66 +5,80 @@ dist_install_DATA = \
 	az.png \
 	bullet.png \
 	clock.png \
+	cutting.svg \
 	default.png \
 	dish.png \
 	dish_scan.png \
 	dmm_logo.png \
-	epgclock_add.svg \
 	epgclock.svg \
+	epgclock_add.svg \
 	epgclock_post.svg \
 	epgclock_pre.svg \
 	epgclock_prepost.svg \
-	expandable.png \
 	expandable-plugins.png \
-	expanded.png \
+	expandable.png \
 	expanded-plugins.png \
+	expanded.png \
 	faz.png \
 	folder.png \
 	fza.png \
 	hdd.png \
 	hdd24.png \
+	ico_dvb_c-fs8.png \
+	ico_dvb_s-fs8.png \
+	ico_dvb_t-fs8.png \
 	ico_mp_forward.png \
 	ico_mp_pause.png \
 	ico_mp_play.png \
 	ico_mp_rewind.png \
 	ico_mp_stop.png \
-	ico_dvb_c-fs8.png \
-	ico_dvb_s-fs8.png \
-	ico_dvb_t-fs8.png \
 	ico_service_group-fs8.png \
 	ico_stream-fs8.png \
 	icon_crypt.png \
 	icon_dolby.png \
 	icon_event.png \
 	icon_format.png \
-	icon_rec_off.png \
 	icon_rec.png \
-	icons_off.png \
+	icon_rec_off.png \
 	icon_txt.png \
 	icon_view.png \
+	icons_off.png \
+	input_error.svg \
+	input_info.svg \
 	input_keyboard-configured.png \
 	input_keyboard.png \
+	input_message.svg \
 	input_mouse-configured.png \
 	input_mouse.png \
+	input_question.svg \
 	input_rcnew-configured.png \
 	input_rcnew.png \
 	input_rcold-configured.png \
 	input_rcold.png \
+	input_warning.svg \
+	lock.png \
+	lockBouquet.png \
 	lock_error.png \
 	lock_off.png \
 	lock_on.png \
-	lock.png \
-	lockBouquet.png \
 	loop.png \
+	marker.png \
 	menu_off.png \
 	menu_on.png \
-	marker.png \
-	mp_buttons.png \
+	movielist.png \
 	movie_play.png \
 	movie_play_rec.png \
-	movielist.png \
+	mp_buttons.png \
+	NcamLogo.png \
+	network_wired-active.png \
+	network_wired-inactive.png \
+	network_wired.png \
+	network_wireless-active.png \
+	network_wireless-inactive.png \
+	network_wireless.png \
 	newtop.png \
 	oldtop.png \
+	OscamLogo.png \
 	part_0_4.svg \
 	part_1_4.svg \
 	part_2_4.svg \
@@ -74,22 +88,16 @@ dist_install_DATA = \
 	part_unwatched.svg \
 	pause.png \
 	pic_frame.png \
-	playlist.png \
-	playlistquit.png \
-	plilogo-fs8.png \
-	pipclock_add.svg \
 	pipclock.svg \
+	pipclock_add.svg \
 	pipclock_post.svg \
 	pipclock_pre.svg \
 	pipclock_prepost.svg \
-	quit.png \
-	network_wired.png \
-	network_wired-active.png \
-	network_wired-inactive.png \
-	network_wireless.png \
-	network_wireless-active.png \
-	network_wireless-inactive.png \
+	playlist.png \
+	playlistquit.png \
+	plilogo-fs8.png \
 	plugin.png \
+	quit.png \
 	rass_logo.png \
 	rass_page1.png \
 	rass_page2.png \
@@ -100,8 +108,8 @@ dist_install_DATA = \
 	rep.png \
 	repeat_off.png \
 	repeat_on.png \
-	repepgclock_add.svg \
 	repepgclock.svg \
+	repepgclock_add.svg \
 	repepgclock_post.svg \
 	repepgclock_pre.svg \
 	repepgclock_prepost.svg \
@@ -115,15 +123,21 @@ dist_install_DATA = \
 	repzaprecclock_post.svg \
 	repzaprecclock_pre.svg \
 	repzaprecclock_prepost.svg \
-	stream.png \
-	stream24.png \
 	scan-c.png \
 	scan-s.png \
 	scan-t.png \
 	selectioncross.png \
 	shuffle.png \
-	timer_done.svg  timer_prep.svg  timer_rep.svg   timer_zap.svg \
-	timer_off.svg   timer_rec.svg   timer_wait.svg   timer_autotimer.svg \
+	stream.png \
+	stream24.png \
+	timer_autotimer.svg \
+	timer_done.svg \
+	timer_off.svg \
+	timer_prep.svg \
+	timer_rec.svg \
+	timer_rep.svg \
+	timer_wait.svg \
+	timer_zap.svg \
 	trashcan.png \
 	unlock.png \
 	unlockBouquet.png \
@@ -139,10 +153,4 @@ dist_install_DATA = \
 	zaprecclock_add.svg \
 	zaprecclock_post.svg \
 	zaprecclock_pre.svg \
-	zaprecclock_prepost.svg \
-	cutting.svg \
-	input_error.svg \
-	input_info.svg \
-	input_message.svg \
-	input_question.svg \
-	input_warning.svg
+	zaprecclock_prepost.svg

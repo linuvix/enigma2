@@ -93,6 +93,8 @@ class ServiceInfo(Converter):
 	IS_VIDEO_AVC = 36
 	IS_VIDEO_HEVC = 37
 	IS_SOFTCSA = 38
+	IS_480 = 39
+	IS_576 = 40
 
 	def __init__(self, type):
 		Converter.__init__(self, type)
@@ -128,6 +130,8 @@ class ServiceInfo(Converter):
 				"Is4K": (self.IS_4K, (iPlayableService.evVideoSizeChanged, iPlayableService.evUpdatedInfo)),
 				"Is1080": (self.IS_1080, (iPlayableService.evVideoSizeChanged, iPlayableService.evUpdatedInfo)),
 				"Is720": (self.IS_720, (iPlayableService.evVideoSizeChanged, iPlayableService.evUpdatedInfo)),
+				"Is480": (self.IS_480, (iPlayableService.evVideoSizeChanged, iPlayableService.evUpdatedInfo)),
+				"Is576": (self.IS_576, (iPlayableService.evVideoSizeChanged, iPlayableService.evUpdatedInfo)),
 				"IsSDR": (self.IS_SDR, (iPlayableService.evVideoGammaChanged, iPlayableService.evUpdatedInfo)),
 				"IsHDR": (self.IS_HDR, (iPlayableService.evVideoGammaChanged, iPlayableService.evUpdatedInfo)),
 				"IsHDR10": (self.IS_HDR10, (iPlayableService.evVideoGammaChanged, iPlayableService.evUpdatedInfo)),
@@ -137,7 +141,7 @@ class ServiceInfo(Converter):
 				"IsVideoHEVC": (self.IS_VIDEO_HEVC, (iPlayableService.evUpdatedInfo,)),
 				"IsSoftCSA": (self.IS_SOFTCSA, (iPlayableService.evUpdatedInfo,)),
 			}[type]
-		if self.type in (self.IS_SD, self.IS_HD, self.IS_SD_AND_WIDESCREEN, self.IS_SD_AND_NOT_WIDESCREEN, self.IS_4K, self.IS_1080, self.IS_720):
+		if self.type in (self.IS_SD, self.IS_HD, self.IS_SD_AND_WIDESCREEN, self.IS_SD_AND_NOT_WIDESCREEN, self.IS_4K, self.IS_1080, self.IS_720, self.IS_480, self.IS_576):
 			self.videoHeight = 0
 			if self.type in (self.IS_SD_AND_WIDESCREEN, self.IS_SD_AND_NOT_WIDESCREEN):
 				self.aspect = 0
@@ -240,6 +244,13 @@ class ServiceInfo(Converter):
 						return self.videoHeight > 1000 and self.videoHeight <= 1080
 					elif self.type == self.IS_720:
 						return self.videoHeight == 720
+					elif self.type == self.IS_480:
+						# 480-line SD (NTSC).  Some encoders emit 480i/480p
+						# with tiny variations, so accept a small window.
+						return 400 <= self.videoHeight <= 576 and self.videoHeight != 576
+					elif self.type == self.IS_576:
+						# 576-line SD (PAL/SECAM).  Matches 576i/576p.
+						return self.videoHeight == 576
 					else:
 						aspect = info.getInfo(iServiceInformation.sAspect)
 						self.aspect = aspect if aspect > -1 else self.aspect
