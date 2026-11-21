@@ -511,3 +511,6 @@ class ServiceInfoBar(GUIAddon):
 		self.skinAttributes = attribs
 		self.l.setFont(0, self.font)
 		return GUIAddon.applySkin(self, desktop, parent)
+# --- compat for skins expecting COCServiceInfoBar ---
+COCServiceInfoBar = ServiceInfoBar
+# --- end compat ---
