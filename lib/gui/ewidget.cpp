@@ -245,6 +245,12 @@ void eWidget::setBackgroundColor(const gRGB &col)
 	m_have_background_color = true;
 }
 
+void eWidget::clearBackgroundColor()
+{
+	m_have_background_color = false;
+	invalidate();
+}
+
 void eWidget::setBorderWidth(int width)
 {
 	setWidgetBorderWidth(width);
