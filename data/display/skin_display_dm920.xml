@@ -225,6 +225,16 @@
         <widget font="Regular;44" backgroundColor="#40000000" foregroundColor="#ffffff" halign="center" position="8,185" render="Label" size="380,44" source="parent.selectedChoice" transparent="0" valign="center" />
     </screen>
 
+    <screen name="MessageBoxSimple_summary" position="fill">
+        <eLabel position="0,0" zPosition="-2" size="400,240" backgroundColor="#40000000" foregroundColor="#40000000" />
+        <widget source="parent.Text" render="Label" position="10,10" size="380,220" font="Regular;38" foregroundColor="#ffffff" halign="center" valign="center" />
+    </screen>
+
+    <screen name="RdsInfoDisplaySummary" position="fill">
+        <eLabel position="0,0" zPosition="-2" size="400,240" backgroundColor="#40000000" foregroundColor="#40000000" />
+        <widget source="message" render="Label" position="10,10" size="380,220" font="Regular;38" foregroundColor="#ffffff" halign="center" valign="center" />
+    </screen>
+
     <screen name="ServiceScanSummary" position="fill">
         <eLabel position="0,0" zPosition="-2" size="400,240" backgroundColor="#40000000" foregroundColor="#40000000" />
         <widget font="Regular;48" backgroundColor="#40000000" foregroundColor="#ffffff" halign="center" name="Title" position="10,5" render="Label" size="380,48" transparent="0" valign="top" />
