@@ -250,6 +250,11 @@ void eWidget::setBorderWidth(int width)
 	setWidgetBorderWidth(width);
 }
 
+void eWidget::setBorderColor(const gRGB &color)
+{
+	setWidgetBorderColor(color);
+}
+
 void eWidget::setZPosition(int z)
 {
 	m_z_position = z;

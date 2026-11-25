@@ -50,7 +50,7 @@ public:
 	virtual void clearBackgroundColor() { m_have_background_color = false; }
 
 	virtual void setBorderWidth(int width);
-	virtual void setBorderColor(const gRGB &color) { setWidgetBorderColor(color); }
+	virtual void setBorderColor(const gRGB &color);
 
 	virtual void setWidgetBorderWidth(int width) { 
 			m_border_width = width; 
