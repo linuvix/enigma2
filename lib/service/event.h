@@ -119,8 +119,10 @@ public:
 	SWIG_VOID(RESULT) getLinkageService(eServiceReference &SWIG_OUTPUT, eServiceReference &parent, int num) const;
 	SWIG_VOID(RESULT) getGenreData(ePtr<eGenreData> &SWIG_OUTPUT) const;
 	PyObject *getGenreData() const;
+	PyObject *getGenreDataList() const;
 	SWIG_VOID(RESULT) getParentalData(ePtr<eParentalData> &SWIG_OUTPUT) const;
 	PyObject *getParentalData() const;
+	PyObject *getParentalDataList() const;
 };
 SWIG_TEMPLATE_TYPEDEF(ePtr<eServiceEvent>, eServiceEvent);
 SWIG_EXTEND(ePtr<eServiceEvent>,

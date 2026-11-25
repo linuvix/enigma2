@@ -3,9 +3,7 @@
 
 #include <lib/gdi/gpixmap.h>
 
-#ifndef __GLIBC__
-#include <sys/types.h>
-#endif
+void clearPixmapCache();
 
 #ifndef SWIG
 

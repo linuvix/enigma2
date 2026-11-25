@@ -18,7 +18,7 @@ def getMultibootStartupDevice():
 	if BoxInfo.getItem("hasKexec"): # kexec kernel multiboot
 		bootList = ("/dev/mmcblk0p4", "/dev/mmcblk0p7", "/dev/mmcblk0p9")
 	else: #legacy multiboot
-		bootList = ("/dev/mmcblk0p1", "/dev/mmcblk1p1", "/dev/mmcblk0p3", "/dev/mmcblk0p4", "/dev/mtdblock2", "/dev/block/by-name/bootoptions")
+		bootList = ("/dev/mmcblk0p1", "/dev/mmcblk1p1", "/dev/mtdblock2", "/dev/block/by-name/bootoptions")
 	for device in bootList:
 		if os.path.exists(device):
 			if os.path.exists("/dev/block/by-name/flag"):

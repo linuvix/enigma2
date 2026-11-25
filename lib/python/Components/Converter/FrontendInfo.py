@@ -5,6 +5,27 @@ from Components.NimManager import nimmanager
 from skin import parameters
 
 
+# Enigma2's skin engine expects literal "\c<argb>" escape sequences inside
+# converter text.  Python >= 3.12 turns "\c" into an invalid-escape warning
+# (and 3.14 may make it a hard error in some builds), so the string MUST be
+# built from a raw literal or the skin renderer receives the wrong bytes.
+COLOR_ESC = r"\c%08x"
+
+_DEFAULT_COLORS = (0x0000FF00, 0x00FFFF00, 0x007F7F7F)
+
+# Dreambox frontends that report a bogus small non-zero AGC even without lock.
+# Only these are allowed to fall back to an SNR-derived display value.
+_BOGUS_AGC_FRONTENDS = ("Si2166D", "Si2169D")
+
+
+def _tr(s):
+	# gettext shortcut, safe if _ is not yet installed in __builtins__
+	try:
+		return _(s)
+	except NameError:
+		return s
+
+
 class FrontendInfo(Converter):
 	BER = 0
 	SNR = 1
@@ -18,6 +39,9 @@ class FrontendInfo(Converter):
 
 	def __init__(self, type):
 		Converter.__init__(self, type)
+		self.space_for_tuners = 10
+		self.space_for_tuners_with_spaces = 6
+		self.show_all_non_link_tuners = True
 		if type == "BER":
 			self.type = self.BER
 		elif type == "SNR":
@@ -32,120 +56,259 @@ class FrontendInfo(Converter):
 			self.type = self.TUNER_TYPE
 		elif type.startswith("STRING"):
 			self.type = self.STRING
-			type = type.split(",")
-			self.space_for_tuners = len(type) > 1 and int(type[1]) or 10
-			self.space_for_tuners_with_spaces = len(type) > 2 and int(type[2]) or 6
-			self.show_all_non_link_tuners = True if len(type) <= 3 else type[3] == "True"
+			parts = type.split(",")
+			if len(parts) > 1 and parts[1].strip():
+				try:
+					self.space_for_tuners = int(parts[1])
+				except (ValueError, TypeError):
+					pass
+			if len(parts) > 2 and parts[2].strip():
+				try:
+					self.space_for_tuners_with_spaces = int(parts[2])
+				except (ValueError, TypeError):
+					pass
+			if len(parts) > 3:
+				self.show_all_non_link_tuners = (parts[3] == "True")
 		elif type == "USE_TUNERS_STRING":
 			self.type = self.USE_TUNERS_STRING
 		else:
 			self.type = self.LOCK
 
+	# ------------------------------------------------------------------ helpers
+	@staticmethod
+	def _swap_snr():
+		try:
+			return bool(config.usage.swap_snr_on_osd.value)
+		except Exception:
+			return False
+
+	@staticmethod
+	def _colors():
+		try:
+			c = parameters.get("FrontendInfoColors", _DEFAULT_COLORS)
+			if not c or len(c) < 3:
+				return _DEFAULT_COLORS
+			return c
+		except Exception:
+			return _DEFAULT_COLORS
+
+	def _src(self):
+		# Some Python 3.14 / OE-master builds instantiate converters during
+		# the very first skin parse, before a service is assigned.
+		return getattr(self, "source", None)
+
+	def _tuner_mask(self):
+		s = self._src()
+		if s is None:
+			return 0
+		mask = getattr(s, "tuner_mask", None)
+		if mask is None:
+			return 0
+		try:
+			return int(mask)
+		except (ValueError, TypeError):
+			return 0
+
+	def _slot_number(self):
+		s = self._src()
+		if s is None:
+			return None
+		return getattr(s, "slot_number", None)
+
+	# ------------------------------------------------------------------ AGC
+	def getAGC(self):
+		s = self._src()
+		if s is None:
+			return None
+		agc = getattr(s, "agc", None)
+		if agc:
+			try:
+				agc = int(agc)
+			except (ValueError, TypeError):
+				agc = 0
+			# Only the known Dreambox Si2166D/Si2169D frontends report a
+			# bogus small non-zero AGC (seen: 89-124) without lock.  Any
+			# other frontend that reports an AGC value is trusted as-is.
+			ft = getattr(s, "frontend_type", None) or ""
+			if not (ft in _BOGUS_AGC_FRONTENDS and 89 <= agc <= 124):
+				return agc
+		else:
+			agc = 0
+
+		# Derive a display value from SNR for the affected Dreambox tuners
+		# (and for frontends that report no AGC at all).
+		snr = getattr(s, "snr", None)
+		if not snr:
+			return agc if agc else None
+		try:
+			snr = int(snr)
+		except (ValueError, TypeError):
+			return None
+		snrPercent = snr * 100.0 / 65535.0
+		if snrPercent < 35:
+			agcPercent = snrPercent * 1.8
+		elif snrPercent < 70:
+			agcPercent = 63 + ((snrPercent - 35) * 0.8)
+		else:
+			agcPercent = 91 + ((snrPercent - 70) * 0.3)
+		return round(min(100, agcPercent) * 65535 / 100.0)
+
+	# ------------------------------------------------------------------ text
 	@cached
 	def getText(self):
-		assert self.type not in (self.LOCK, self.SLOT_NUMBER), "the text output of FrontendInfo cannot be used for lock info"
+		s = self._src()
+		if s is None:
+			return _tr("N/A")
+
 		percent = None
-		swapsnr = config.usage.swap_snr_on_osd.value
-		colors = parameters.get("FrontendInfoColors", (0x0000FF00, 0x00FFFF00, 0x007F7F7F)) # tuner active, busy, available colors
-		if self.type == self.BER: # as count
-			count = self.source.ber
+		swapsnr = self._swap_snr()
+		colors = self._colors()
+
+		if self.type == self.BER:
+			count = getattr(s, "ber", None)
 			if count is not None:
-				return str(count)
-			else:
-				return _("N/A")
+				try:
+					return str(int(count))
+				except (ValueError, TypeError):
+					pass
+			return _tr("N/A")
+
 		elif self.type == self.AGC:
-			percent = self.source.agc
+			percent = self.getAGC()
+
 		elif (self.type == self.SNR and not swapsnr) or (self.type == self.SNRdB and swapsnr):
-			percent = self.source.snr
+			percent = getattr(s, "snr", None)
+
 		elif self.type == self.SNR or self.type == self.SNRdB:
-			if self.source.snr_db is not None:
-				return _("%3.01f dB") % (self.source.snr_db / 100.0)
-			elif self.source.snr is not None: #fallback to normal SNR...
-				percent = self.source.snr
+			snr_db = getattr(s, "snr_db", None)
+			if snr_db is not None:
+				try:
+					return _tr("%3.01f dB") % (float(snr_db) / 100.0)
+				except (ValueError, TypeError):
+					pass
+			percent = getattr(s, "snr", None)
+
 		elif self.type == self.TUNER_TYPE:
-			return self.source.frontend_type or _("Unknown")
+			return getattr(s, "frontend_type", None) or _tr("Unknown")
+
 		elif self.type == self.STRING:
 			string = ""
+			current = self._slot_number()
+			mask = self._tuner_mask()
+			total = len(nimmanager.nim_slots)
 			for n in nimmanager.nim_slots:
 				if n.type and n.enabled:
-					if n.slot == self.source.slot_number:
-						color = "\c%08x" % colors[0]
-					elif self.source.tuner_mask & 1 << n.slot:
-						color = "\c%08x" % colors[1]
-					elif len(nimmanager.nim_slots) <= self.space_for_tuners or n.isFBCRoot() or self.show_all_non_link_tuners and not (n.isFBCLink() or n.config_mode == "loopthrough"):
-						color = "\c%08x" % colors[2]
+					if n.slot == current:
+						color = COLOR_ESC % colors[0]
+					elif mask & (1 << n.slot):
+						color = COLOR_ESC % colors[1]
+					elif total <= self.space_for_tuners or n.isFBCRoot() or (self.show_all_non_link_tuners and not (n.isFBCLink() or n.config_mode == "loopthrough")):
+						color = COLOR_ESC % colors[2]
 					else:
 						continue
-					if string and len(nimmanager.nim_slots) <= self.space_for_tuners_with_spaces:
+					if string and total <= self.space_for_tuners_with_spaces:
 						string += " "
 					string += color + chr(ord("A") + n.slot)
 			return string
-		if self.type == self.USE_TUNERS_STRING:
+
+		elif self.type == self.USE_TUNERS_STRING:
 			string = ""
+			current = self._slot_number()
+			mask = self._tuner_mask()
 			for n in nimmanager.nim_slots:
 				if n.type and n.enabled:
-					if n.slot == self.source.slot_number:
-						color = "\c%08x" % colors[0]
-					elif self.source.tuner_mask & 1 << n.slot:
-						color = "\c%08x" % colors[1]
+					if n.slot == current:
+						color = COLOR_ESC % colors[0]
+					elif mask & (1 << n.slot):
+						color = COLOR_ESC % colors[1]
 					else:
 						continue
 					if string:
 						string += " "
 					string += color + chr(ord("A") + n.slot)
 			return string
-		if percent is None:
-			return _("N/A")
-		return "%d %%" % (percent * 100 / 65535)
 
+		if percent is None:
+			return _tr("N/A")
+		try:
+			percent = int(percent)
+		except (ValueError, TypeError):
+			return _tr("N/A")
+		if percent < 0:
+			percent = 0
+		elif percent > 65535:
+			percent = 65535
+		return "%d %%" % (percent * 100 // 65535)
+
+	# ------------------------------------------------------------------ bool
 	@cached
 	def getBool(self):
-		assert self.type in (self.LOCK, self.BER, self.SNR, self.SNRdB, self.AGC, self.STRING, self.USE_TUNERS_STRING), "the boolean output of FrontendInfo can only be used for lock, BER, SNR, SNRdB, AGC, STRING, or  USE_TUNERS_STRING"
-		swapsnr = config.usage.swap_snr_on_osd.value
+		s = self._src()
+		if s is None:
+			return False
+		swapsnr = self._swap_snr()
 		if self.type == self.LOCK:
-			lock = self.source.lock
-			if lock is None:
-				lock = False
-			return lock
+			lock = getattr(s, "lock", None)
+			return bool(lock) if lock is not None else False
 		elif self.type == self.BER:
-			return self.source.ber is not None
+			return getattr(s, "ber", None) is not None
 		elif (self.type == self.SNR and not swapsnr) or (self.type == self.SNRdB and swapsnr):
-			return self.source.snr is not None
+			return getattr(s, "snr", None) is not None
 		elif self.type == self.SNR or self.type == self.SNRdB:
-			return (self.source.snr_db is not None or self.source.snr is not None)
+			return getattr(s, "snr_db", None) is not None or getattr(s, "snr", None) is not None
 		elif self.type == self.AGC:
-			return self.source.agc is not None
+			return self.getAGC() is not None
 		elif self.type in (self.STRING, self.USE_TUNERS_STRING):
-			return bool(self.getText())
+			try:
+				return bool(self.getText())
+			except Exception:
+				return False
+		return False
 
-	text = property(getText)
-
-	boolean = property(getBool)
-
+	# ------------------------------------------------------------------ value
 	@cached
 	def getValue(self):
-		assert self.type != self.LOCK, "the value/range output of FrontendInfo can not be used for lock info"
+		s = self._src()
+		if s is None:
+			return 0
 		if self.type == self.AGC:
-			return self.source.agc or 0
+			agc = self.getAGC()
+			return 0 if agc is None else int(agc)
 		elif self.type == self.SNR:
-			return self.source.snr or 0
+			v = getattr(s, "snr", None) or 0
+			try:
+				return int(v)
+			except (ValueError, TypeError):
+				return 0
 		elif self.type == self.BER:
-			ber = self.source.ber or 0
+			ber = getattr(s, "ber", None) or 0
+			try:
+				ber = int(ber)
+			except (ValueError, TypeError):
+				ber = 0
 			return ber if ber < self.range else self.range
 		elif self.type == self.TUNER_TYPE:
-			type = self.source.frontend_type
-			if type == 'DVB-S':
+			t = getattr(s, "frontend_type", None)
+			if t == "DVB-S":
 				return 0
-			elif type == 'DVB-C':
+			elif t == "DVB-C":
 				return 1
-			elif type == 'DVB-T':
+			elif t == "DVB-T":
 				return 2
-			elif type == 'ATSC':
+			elif t == "ATSC":
 				return 3
 			return -1
 		elif self.type == self.SLOT_NUMBER:
-			num = self.source.slot_number
-			return num is None and -1 or num
+			num = self._slot_number()
+			if num is None:
+				return -1
+			try:
+				return int(num)
+			except (ValueError, TypeError):
+				return -1
+		return 0
 
-	range = 65535
+	text = property(getText)
+	boolean = property(getBool)
 	value = property(getValue)
+	range = 65535

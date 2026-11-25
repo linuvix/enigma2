@@ -37,9 +37,15 @@ class ServiceTime(Converter):
 			return time
 		elif self.type == self.ENDTIME:
 			begin = info.getInfo(service, iServiceInformation.sTimeCreate)
-			len = info.getLength(service)
-			return begin + len
+			length = info.getLength(service)
+			# Unknown begin or length would give a nonsensical end time.
+			if begin < 0 or length < 0:
+				return None
+			return begin + length
 		elif self.type == self.DURATION:
-			return info.getLength(service)
+			length = info.getLength(service)
+			# Return None for unknown durations so callers can render
+			# "empty" rather than a bogus value.
+			return length if length >= 0 else None
 
 	time = property(getTime)

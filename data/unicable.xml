@@ -15,7 +15,7 @@ bootuptime: integer, delay to allow the device to boot up, in milliseconds (opti
 lofl: integer, alternative LOF/L value (optional, default value is 9750)
 lofh: integer, alternative LOF/H value (optional, defaultvalue is 10600)
 -->
-<unicable version="20240410">
+<unicable version="20261103">
 	<lnb>
 		<manufacturer name="Dura-Sat(DUR-line)">
 			<product name="MB6-UK Mono" positions="2" format="jess" bootuptime="2500" scrs= "1210,1420,1680,2040,1005,1050,1095,1140,1260,1305,1350,1475,1520,1565,1610,1725,1770,1815,1860,1905,1950,1995,2085,2130"/>
@@ -24,6 +24,7 @@ lofh: integer, alternative LOF/H value (optional, defaultvalue is 10600)
 			<product name="UK104" scrs="1210,1420,1680,2040"/>
 			<product name="UK119" format="jess" bootuptime="2500" scrs="1076,1178,1280,1382,1484,1586,1688,1790,975,1025,1225,1330,1430,1535,1630,1730,1840,1880,1920,1960,2000,2040,2080,2125"/>
 			<product name="UK124" format="jess" bootuptime="2500" scrs="1210,1420,1680,2040,1005,1050,1095,1140,1260,1305,1350,1475,1520,1565,1610,1725,1770,1815,1860,1905,1950,1995,2085,2130"/>
+			<product name="UK 124-3L" format="jess" bootuptime="2500" scrs="1210,1420,1680,2040,1005,1050,1095,1140,1260,1305,1350,1475,1520,1565,1610,1725,1770,1815,1860,1905,1950,1995,2085,2130"/>
 		</manufacturer>
 		<manufacturer name="DStv">
 			<product name="LMX500" format="jess" bootuptime="2500" scrs="1210,1420,1680,2040,1006,1057,1108,1159,1261,1312,1363,1471,1522,1573,1624,1731,1782,1833,1884,1935,1986,2091,2142,2193"/>
@@ -34,6 +35,9 @@ lofh: integer, alternative LOF/H value (optional, defaultvalue is 10600)
 		<manufacturer name="Fuba">
 			<product name="DEK 124" format="jess" scrs="975,1025,1075,1125,1175,1225,1275,1325,1375,1425,1475,1525,1575,1625,1675,1730,1775,1825,1875,1925,1975,2025,2075,2125"/>
 			<product name="DEK 342" scrs="1210,1420,1680,2040"/>
+			<product name="FMG 524 E" format="jess" positions="2" scrs="975,1025,1075,1125,1175,1225,1275,1325,1375,1425,1475,1525,1575,1625,1675,1725,1775,1825,1875,1925,1975,2025,2075,2125"/>
+			<product name="FME 524 E" format="jess" positions="2" scrs="975,1025,1075,1125,1175,1225,1275,1325,1375,1425,1475,1525,1575,1625,1675,1725,1775,1825,1875,1925,1975,2025,2075,2125"/>
+			<product name="MCR 532" format="jess" positions="2" scrs="1076,1178,1280,1382,1484,1586,1688,1790,1020,1125,1230,1330,1435,1535,1640,1735"/>
 		</manufacturer>
 		<manufacturer name="Fte maximal">
 			<product name="PREMIUM dCSS 24ch" format="jess" scrs="1076,1178,1280,1382,1484,1586,1688,1790,975,1025,1225,1330,1430,1535,1630,1730,1840,1880,1920,1960,2000,2040,2080,2125"/>
@@ -54,8 +58,10 @@ lofh: integer, alternative LOF/H value (optional, defaultvalue is 10600)
 			<product name="GT-S1dCSS24" format="jess" bootuptime="2500" scrs="0975,1025,1075,1125,1175,1225,1275,1325,1375,1425,1475,1525,1575,1625,1675,1725,1775,1825,1875,1925,1975,2025,2075,2125"/>
 			<product name="GT-S2dCSS24" format="jess" bootuptime="2500" scrs="0975,1025,1075,1125,1175,1225,1275,1325,1375,1425,1475,1525,1575,1625,1675,1725,1775,1825,1875,1925,1975,2025,2075,2125"/>
 			<product name="GT-S3DCSS24" format="jess" bootuptime="2500" scrs="0975,1025,1075,1125,1175,1225,1275,1325,1375,1425,1475,1525,1575,1625,1675,1725,1775,1825,1875,1925,1975,2025,2075,2125"/>
-			<product name="GT-S2dCSS24 - Italy" format="jess" bootuptime="2500" scrs ="1210,1420,1680,2040,985,1050,1115,1275,1340,1485 ,1550,1615,1745,1810,1875,1940"/> <!-- Programmed for 16 SCR only for the Italian market -->
+			<product name="GT-S2dCSS24 - Italy" format="jess" bootuptime="2500" scrs ="1210,1420,1680,2040,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
 			<product name="GT-S2dCSS24 - Poland" format="jess" bootuptime="2500" scrs="1210,1420,1680,2040,978,1028,1072,1116,1160,1271,1315,1359,1484,1528,1572,1616,2084,2128,1816,1860,1904,1948,1992,1728"/>
+			<product name="GT-dLNB2T - Italy (SCR 1-4)" format="unicable" positions="1" scrs="1210,1420,1680,2040"/>
+			<product name="GT-dLNB2T - Italy (dCSS 5-16)" format="jess" positions="1" scrs="0,0,0,0,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
 		</manufacturer>
 		<manufacturer name="Humax">
 			<product name="150 SCR" scrs="1210,1420,1680,2040"/>
@@ -66,10 +72,10 @@ lofh: integer, alternative LOF/H value (optional, defaultvalue is 10600)
 			<product name="IDLB-QUDL-UNI2L-OPP" scrs="1210,1420,1680,2040"/>
 			<product name="IDLB-QUDL42-UNI2L-1PP" scrs="1210,1420,1680,2040"/>
 			<product name="IDLU-24UL40-UNMOO-OPP" positions="4" format="jess" bootuptime="800" scrs="1210,1420,1680,2040,1005,1050,1095,1140,1260,1305,1350,1475,1520,1565,1610,1725,1770,1815,1860,1905,1950,1995,2085,2130"/>
-			<product name="IDLU-24UL40-PLSTM-BPP" bootuptime="2500" format="jess" scrs="1210,1420,1680,2040,0984,1020,1056,1092,1128,1164,1256,1292,1328,1364,1458,1494,1530,1566,1602,1638,1716,1752,1788,1824"/> <!-- Item 5404 -->
-			<product name="IDLU-32L412-UNBRR-OPN" positions="4" format="jess" bootuptime="800" scrs="1210,1420,1680,2040,984,1020,1056,1092,1128,1164,1256,1292,1328,1364,1458,1494,1530,1566,1602,1638,1716,1752,1788,1824,1860,1896,1932,1968,2004,2076,2112,2148"/> <!-- Item 5520 -->
+			<product name="IDLU-24UL40-PLSTM-BPP" bootuptime="2500" format="jess" scrs="1210,1420,1680,2040,0984,1020,1056,1092,1128,1164,1256,1292,1328,1364,1458,1494,1530,1566,1602,1638,1716,1752,1788,1824"/>
+			<product name="IDLU-32L412-UNBRR-OPN" positions="4" format="jess" bootuptime="800" scrs="1210,1420,1680,2040,984,1020,1056,1092,1128,1164,1256,1292,1328,1364,1458,1494,1530,1566,1602,1638,1716,1752,1788,1824,1860,1896,1932,1968,2004,2076,2112,2148"/>
 			<product name="IDLU-32UL40-UNBOO-OPP" positions="4" format="jess" bootuptime="800" scrs="1210,1420,1680,2040,984,1020,1056,1092,1128,1164,1256,1292,1328,1364,1458,1494,1530,1566,1602,1638,1716,1752,1788,1824,1860,1896,1932,1968,2004,2076,2112,2148"/>
-			<product name="IDLU-32UL42-UNBOO-OPP" positions="4" format="jess" bootuptime="800" scrs="1210,1420,1680,2040,984,1020,1056,1092,1128,1164,1256,1292,1328,1364,1458,1494,1530,1566,1602,1638,1716,1752,1788,1824,1860,1896,1932,1968,2004,2076,2112,2148"/> <!-- Item 5679 -->
+			<product name="IDLU-32UL42-UNBOO-OPP" positions="4" format="jess" bootuptime="800" scrs="1210,1420,1680,2040,984,1020,1056,1092,1128,1164,1256,1292,1328,1364,1458,1494,1530,1566,1602,1638,1716,1752,1788,1824,1860,1896,1932,1968,2004,2076,2112,2148"/>
 		</manufacturer>
 		<manufacturer name="Kathrein">
 			<product name="UAS481" lofl="10200" lofh="10200" scrs="1400,1516,1632,1748"/>
@@ -79,13 +85,21 @@ lofh: integer, alternative LOF/H value (optional, defaultvalue is 10600)
 		</manufacturer>
 		<manufacturer name="Maclean">
 			<product name="MCTV-762" scrs="1210,1420,1680,2040"/>
-			<product name="Unicable II MCTV-785" format="jess" scrs ="1210,1420,1680,2040,985,1050,1115,1275,1340,1485 ,1550,1615,1745,1810,1875,1940"/>
+			<product name="Unicable II MCTV-785" format="jess" scrs ="1210,1420,1680,2040,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
 		</manufacturer>
 		<manufacturer name="Megasat">
 			<product name="Unicable II LNB Diavolo" format="jess" bootuptime="2500" scrs="1210,1420,1680,2040,1005,1050,1095,1140,1260,1305,1350,1475,1520,1565,1610,1725,1770,1815,1860,1905,1950,1995,2085,2130"/>
 		</manufacturer>
 		<manufacturer name="Microelectronics Technology Inc">
 			<product name="AKU0-U05-M103" format="jess" bootuptime="2500" scrs="1210,1420,1680,2040,1005,1050,1095,1140,1260,1305,1350,1475,1520,1565,1610,1725,1770,1815,1860,1905,1950,1995,2085,2130"/>
+		</manufacturer>
+		<manufacturer name="Offel">
+			<product name="13-205 LNB dCSS (SCR 1-4)" format="unicable" positions="1" scrs="1210,1420,1680,2040"/>
+			<product name="13-205 LNB dCSS (dCSS 5-16)" format="jess" positions="1" scrs="0,0,0,0,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
+			<product name="13-207 LNB dCSS 1 LEGACY (SCR 1-4)" format="unicable" positions="1" scrs="1210,1420,1680,2040"/>
+			<product name="13-207 LNB dCSS 1 LEGACY (dCSS 5-16)" format="jess" positions="1" scrs="0,0,0,0,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
+			<product name="13-208 LNB dCSS 2 LEGACY (SCR 1-4)" format="unicable" positions="1" scrs="1210,1420,1680,2040"/>
+			<product name="13-208 LNB dCSS 2 LEGACY (dCSS 5-16)" format="jess" positions="1" scrs="0,0,0,0,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
 		</manufacturer>
 		<manufacturer name="Opticum">
 			<product name="SCR 16UB Pro" format="dSCR,4" scrs="1210,1420,1680,2040,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
@@ -109,6 +123,8 @@ lofh: integer, alternative LOF/H value (optional, defaultvalue is 10600)
 		</manufacturer>
 		<manufacturer name="Televes">
 			<product name="LNB dCSS UNICABLE II 747322" format="jess" scrs="1210,1420,1680,2040,978,1028,1072,1116,1160,1271,1315,1359,1484,1528,1572,1616,2084,2128,1816,1860,1904,1948,1992,1728"/>
+			<product name="747312 (SPE24)" format="jess" scrs="1076,1178,1280,1382,1484,1586,1688,1790,975,1025,1125,1225,1325,1425,1525,1630,1730,1830,1875,1925,1975,2025,2075,2125"/>
+			<product name="747342 (PL)" format="jess" positions="1" scrs="1210,1420,1680,2040,978,1028,1072,1116,1160,1271,1315,1359,1484,1528,1572,1616,2084,2128,1816,1860,1904,1948,1992,1728"/>
 		</manufacturer>
 		<manufacturer name="Triax">
 			<product name="TSC 001" scrs="1210,1420,1680,2040"/>
@@ -152,6 +168,11 @@ lofh: integer, alternative LOF/H value (optional, defaultvalue is 10600)
 			<product name="SES 996-09" positions="2" scrs="1280,1382,1484,1586,1688,1790"/>
 			<product name="SES 46-00" scrs="1280,1382,1484,1586,1688,1790"/>
 			<product name="SES 86-00" positions="2" scrs="1280,1382,1484,1586,1688,1790"/>
+			<product name="SES 5216/5416/5816-06" format="jess" positions="2" scrs="975,1025,1075,1125,1175,1225,1275,1325,1375,1425,1475,1525,1575,1625,1675,1725"/>
+			<product name="SES 544-06" format="unicable" positions="2" scrs="1331,1382,1433,1484"/>
+			<product name="SES 984-06" format="jess" positions="4" scrs="1331,1382,1433,1484"/>
+			<product name="SES 5532-19 (2 Sat)" format="jess" positions="2" scrs="1280,1382,1484,1586,1688,1790,1892,1994,974,1008,1042,1076,1110,1144,1178,1212,1246,1314,1348,1416,1450,1518,1552,1620,1654,1722,1756,1824,1858,1926,1960,2028"/>
+			<product name="SES 5532-19 x2 (4 Sat)" format="jess" positions="4" scrs="1280,1382,1484,1586,1688,1790,1892,1994,974,1008,1042,1076,1110,1144,1178,1212,1246,1314,1348,1416,1450,1518,1552,1620,1654,1722,1756,1824,1858,1926,1960,2028"/>
 		</manufacturer>
 		<manufacturer name="DCT Delta">
 			<product name="MSU 401/2-16K (SCR1-4)" scrs="1210,1420,1680,2040"/>
@@ -194,6 +215,12 @@ lofh: integer, alternative LOF/H value (optional, defaultvalue is 10600)
 			<product name="MS5/5+2PIP-4" scrs="1080,1176,1237,1413,1555,1668,1842,1960" />
 			<product name="MS5/5+2PEP-4" scrs="1080,1176,1237,1413,1555,1668,1842,1960" />
 		</manufacturer>
+		<manufacturer name="Fracarro">
+			<product name="SCD2-5416 (SCR 1-4)" format="unicable" positions="1" scrs="1210,1420,1680,2040"/>
+			<product name="SCD2-5416 (dCSS 5-16)" format="jess" positions="1" scrs="0,0,0,0,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
+			<product name="SCD2-5816 (SCR 1-4)" format="unicable" positions="1" scrs="1210,1420,1680,2040"/>
+			<product name="SCD2-5816 (dCSS 5-16)" format="jess" positions="1" scrs="0,0,0,0,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
+		</manufacturer>
 		<manufacturer name="Fuba">
 			<product name="MCR 212" scrs="1400,1516"/>
 			<product name="MCR 221" format="jess" scrs="1280,1382"/>
@@ -215,11 +242,11 @@ lofh: integer, alternative LOF/H value (optional, defaultvalue is 10600)
 			<product name="IDLP-UST111-CUO1O-8PP" scrs="1076,1178,1280,1382,1484,1586,1688,1790"/>
 			<product name="IDLP-UST112-CUO1O-8PP" scrs="1076,1178,1280,1382,1484,1586,1688,1790"/>
 			<product name="IDLP-USS200-CUO10-8PP" positions="2" scrs="1076,1178,1280,1382,1484,1586,1688,1790"/>
-			<product name="ISKY-UST110-CUO4O-16P" format="dSCR,4" scrs="1210,1420,1680,2040,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/> <!-- Item 5412 -->
-			<product name="ISKY-UST110-CUO8O-16P" format="dSCR,4" scrs="1210,1420,1680,2040,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/> <!-- Item 5457 -->
+			<product name="ISKY-UST110-CUO4O-16P" format="dSCR,4" scrs="1210,1420,1680,2040,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
+			<product name="ISKY-UST110-CUO8O-16P" format="dSCR,4" scrs="1210,1420,1680,2040,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
 			<product name="IDLU-UST110-CUO1O-32P" format="jess" bootuptime="2500" scrs="1210,1420,1680,2040,984,1020,1056,1092,1128,1164,1256,1292,1328,1364,1458,1494,1530,1566,1602,1638,1716,1752,1788,1824,1860,1896,1932,1968,2004,2076,2112,2148"/>
 			<product name="IDLU-UST110-CUO4O-32P" format="jess" positions="2" bootuptime="2500" scrs="1210,1420,1680,2040,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
-			<product name="IDLU-UST110-CUO8O-32P" format="jess" positions="2" bootuptime="2500" scrs="1210,1420,1680,2040,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/> <!-- Item 5458 -->
+			<product name="IDLU-UST110-CUO8O-32P" format="jess" positions="2" bootuptime="2500" scrs="1210,1420,1680,2040,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
 			<product name="IDLU-UWT110-CUO10-32P" format="jess" positions="4" bootuptime="2500" scrs="1210,1420,1680,2040,984,1020,1056,1092,1128,1164,1256,1292,1328,1364,1458,1494,1530,1566,1602,1638,1716,1752,1788,1824,1860,1896,1932,1968,2004,2076,2112,2148"/>
 		</manufacturer>
 		<manufacturer name="Johansson">
@@ -243,6 +270,11 @@ lofh: integer, alternative LOF/H value (optional, defaultvalue is 10600)
 			<product name="9762" positions="4" format="jess" scrs="1280,1382,1484"/>
 			<product name="9762D" positions="4" format="jess" scrs="1280,1382,1484"/>
 			<product name="9762I" positions="4" format="jess" scrs="1210,1420,1680"/>
+			<product name="9754 (SCR 1-4)" format="unicable" positions="2" scrs="1210,1420,1680,2040"/>
+			<product name="9754 (dCSS 5-16)" format="jess" positions="2" scrs="0,0,0,0,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
+			<product name="9754A (SCR 1-4)" format="unicable" positions="2" scrs="1210,1420,1680,2040"/>
+			<product name="9754A (dCSS 5-16)" format="jess" positions="2" scrs="0,0,0,0,985,1050,1115,1275,1340,1485,1550,1615,1745,1810,1875,1940"/>
+			<product name="9758 (SCR 1-4)" format="unicable" positions="2" scrs="1210,1420,1680,2040"/>
 		</manufacturer>
 		<manufacturer name="JULTEC">
 			<product name="JPSxx/JRSxx 3 UB" positions="8" format="jess" scrs="1280,1382,1484"/>

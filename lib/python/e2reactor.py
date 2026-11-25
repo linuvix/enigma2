@@ -137,6 +137,14 @@ class PollReactor(posixbase.PosixReactorBase):
 			self.addReader(self.waker)
 		return list(result)
 
+	def getReaders(self):
+		"""Return the current set of reader file descriptors (ATV compat)."""
+		return list(reads.keys())
+
+	def getWriters(self):
+		"""Return the current set of writer file descriptors (ATV compat)."""
+		return list(writes.keys())
+
 	def doPoll(self, timeout,
 			reads=reads,
 			writes=writes,

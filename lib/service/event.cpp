@@ -332,6 +332,11 @@ PyObject *eServiceEvent::getGenreData() const
 	return ret;
 }
 
+PyObject *eServiceEvent::getGenreDataList() const
+{
+	return getGenreData();
+}
+
 RESULT eServiceEvent::getParentalData(ePtr<eParentalData> &dest) const
 {
 	std::list<eParentalData>::const_iterator it = m_ratings.begin();
@@ -356,6 +361,11 @@ PyObject *eServiceEvent::getParentalData() const
 		PyList_SET_ITEM(ret, cnt++, tuple);
 	}
 	return ret;
+}
+
+PyObject *eServiceEvent::getParentalDataList() const
+{
+	return getParentalData();
 }
 
 RESULT eServiceEvent::getComponentData(ePtr<eComponentData> &dest, int tagnum) const

@@ -29,13 +29,13 @@ def MenuEntryPixmap(key, png_cache):
 		return None
 	w, h = parameters.get("MenuIconSize", (50, 50))
 	png = png_cache.get(key)
-	if png is None:  # no cached entry
+	if png is None:
 		pngPath = menuicons.get(key, menuicons.get("default", ""))
 		if pngPath:
 			png = LoadPixmap(resolveFilename(SCOPE_GUISKIN, pngPath), cached=True, width=w, height=0 if pngPath.endswith(".svg") else h)
 	return png
 
-# read the menu
+
 mdom = xml.etree.ElementTree.parse(resolveFilename(SCOPE_SKINS, 'menu.xml'))
 
 
@@ -61,19 +61,14 @@ class Menu(Screen, ProtectedScreen):
 		exec(text)
 
 	def runScreen(self, arg):
-		# arg[0] is the module (as string)
-		# arg[1] is Screen inside this module
-		#	plus possible arguments, as
-		#	string (as we want to reference
-		#	stuff which is just imported)
 		if arg[0] != "":
 			exec("from %s import %s" % (arg[0], arg[1].split(",")[0]), globals())
 			self.openDialog(*eval(arg[1]))
 
-	def nothing(self): #dummy
+	def nothing(self):
 		pass
 
-	def openDialog(self, *dialog): # in every layer needed
+	def openDialog(self, *dialog):
 		self.session.openWithCallback(self.menuClosed, *dialog)
 
 	def openSetup(self, dialog):
@@ -101,7 +96,6 @@ class Menu(Screen, ProtectedScreen):
 			a = boundFunction(self.session.openWithCallback, self.menuClosedWithConfigFlush, Menu, node, PluginLanguageDomain=self.pluginLanguageDomain)
 		else:
 			a = boundFunction(self.session.openWithCallback, self.menuClosed, Menu, node, PluginLanguageDomain=self.pluginLanguageDomain)
-		#TODO add check if !empty(node.childNodes)
 		destList.append((menu_text, a, key, weight, description, menupng))
 
 	def menuClosedWithConfigFlush(self, *res):
@@ -146,8 +140,6 @@ class Menu(Screen, ProtectedScreen):
 				else:
 					module = ""
 
-				# check for arguments. they will be appended to the
-				# openDialog call
 				args = x.text or ""
 				screen += ", " + args
 
@@ -173,8 +165,6 @@ class Menu(Screen, ProtectedScreen):
 				else:
 					module = ""
 
-				# check for arguments. they will be appended to the
-				# openDialog call
 				args = x.text or ""
 				screen += ", " + args
 
@@ -202,6 +192,9 @@ class Menu(Screen, ProtectedScreen):
 		self["key_next"] = StaticText(_("NEXT"))
 		self["menu"] = List([])
 		self["menu"].enableWrapAround = True
+		self["description"] = StaticText()
+		self["pixmap"] = Pixmap()
+		self["menu"].onSelectionChanged.append(self._onSelectionChanged)
 		self.showNumericHelp = False
 		self.createMenuList()
 
@@ -262,7 +255,7 @@ class Menu(Screen, ProtectedScreen):
 		self["key_blue"].text = _("Edit menu") if config.usage.menu_sort_mode.value == "user" else ""
 		self.list = []
 		self.menuID = self.parentmenu.get("key")
-		for x in self.parentmenu: #walk through the actual nodelist
+		for x in self.parentmenu:
 			if not x.tag:
 				continue
 			if x.tag == 'item':
@@ -273,9 +266,7 @@ class Menu(Screen, ProtectedScreen):
 					self.addMenu(self.list, x)
 
 		if self.menuID:
-			# plugins
 			for l, description in plugins.getPluginsForMenuWithDescription(self.menuID):
-				# check if a plugin overrides an existing menu
 				plugin_menuid = l[2]
 				for x in self.list:
 					if x[2] == plugin_menuid:
@@ -307,18 +298,16 @@ class Menu(Screen, ProtectedScreen):
 			self.full_list = list(self.list)
 
 		if config.usage.menu_sort_mode.value == "a_z":
-			# Sort by Name
 			self.list.sort(key=self.sortByName)
 		elif "user" in config.usage.menu_sort_mode.value:
 			self.hide_show_entries()
 		else:
-			# Sort by Weight
 			self.list.sort(key=lambda x: int(x[3]))
 
 		if config.usage.menu_show_numbers.value in ("menu&plugins", "menu") or showNumericHelp:
-			self.list = [(str(x[0] + 1) + " " + x[1][0], x[1][1], x[1][2]) for x in enumerate(self.list)]
+			self.list = [(f"{i + 1} {x[0]}",) + tuple(x[1:]) for i, x in enumerate(self.list)]
 
-		if self.menulength != len(self.list): # updateList must only be used on a list of the same length. If length is different we call setList.
+		if self.menulength != len(self.list):
 			self["menu"].setList(self.list)
 			self.menulength = len(self.list)
 
@@ -328,9 +317,9 @@ class Menu(Screen, ProtectedScreen):
 	def _onSelectionChanged(self):
 		current = self["menu"].current
 		description, pixmap = "", None
-		if current:
-			description, pixmap = current[4:]
-		self["description"].setText(_(description))
+		if current and len(current) >= 6:
+			description, pixmap = current[4:6]
+		self["description"].setText(_(description) if description else "")
 		if pixmap:
 			self["pixmap"].setPixmap(pixmap)
 
@@ -390,7 +379,6 @@ class Menu(Screen, ProtectedScreen):
 		if not self.list:
 			self.list.append(('', None, 'dummy', '10', None, None, 10))
 		self.list.sort(key=lambda listweight: int(listweight[-1]))
-
 
 class MenuSort(Menu):
 	def __init__(self, session, parentmenu, PluginLanguageDomain=None):
@@ -500,8 +488,6 @@ class MenuSort(Menu):
 
 
 class MainMenu(Menu):
-	#add file load functions for the xml-file
-
 	def __init__(self, *x):
 		self.skinName = "Menu"
 		Menu.__init__(self, *x)

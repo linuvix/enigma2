@@ -5,6 +5,7 @@ SUBDIRS = meta
 install_PYTHON =	\
 	__init__.py \
 	plugin.py \
+	BackupRestore.py \
 	SoftwareTools.py
 
 dist_install_DATA = \

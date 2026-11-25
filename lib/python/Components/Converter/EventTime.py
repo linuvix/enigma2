@@ -33,7 +33,11 @@ class EventTime(Poll, Converter):
 
 	@cached
 	def getTime(self):
-		assert self.type != self.PROGRESS
+		# Progress is a value, not a time: refuse silently instead of
+		# raising AssertionError (which would kill the skin under Py 3.14
+		# where OE-master runs without -O).
+		if self.type == self.PROGRESS:
+			return None
 
 		event = self.source.event
 		if event is None:
@@ -51,10 +55,14 @@ class EventTime(Poll, Converter):
 			return st
 		if self.type == self.REMAINING:
 			return (duration, st - int(time()))
+		return None
 
 	@cached
 	def getValue(self):
-		assert self.type == self.PROGRESS
+		# Only Progress has a meaningful value; any other mode returns
+		# None so a mis-bound renderer draws nothing instead of crashing.
+		if self.type != self.PROGRESS:
+			return None
 
 		event = self.source.event
 		if event is None:

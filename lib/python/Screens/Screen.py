@@ -4,6 +4,7 @@ from enigma import eRCInput, eTimer, eWindow, getDesktop
 
 from skin import GUI_SKIN_ID, applyAllAttributes, menus, screens, setups
 from Components.config import config
+from Components.ActionMap import ActionMap
 from Components.GUIComponent import GUIComponent
 from Components.Pixmap import Pixmap
 from Components.Sources.Source import Source
@@ -11,6 +12,27 @@ from Components.Sources.StaticText import StaticText
 from Tools.CList import CList
 from Tools.Directories import SCOPE_GUISKIN, resolveFilename
 from Tools.LoadPixmap import LoadPixmap
+
+import traceback
+
+
+def _log_screen_exception(screen, phase, exc):
+	"""Log a screen-lifecycle exception without taking down Enigma2."""
+	name = screen.__class__.__name__ if screen is not None else "<unknown>"
+	print("[Screen] %s of '%s' raised %s: %s"
+		% (phase, name, exc.__class__.__name__, exc))
+	traceback.print_exc()
+
+
+# Define autoresize function to prevent KeyError in skin applets
+def autoresize(*args, **kwargs):
+    """Dummy function to prevent KeyError when skin applet calls autoresize"""
+    return True
+
+# Add autoresize to builtins for global availability
+import builtins
+if not hasattr(builtins, 'autoresize'):
+    builtins.autoresize = autoresize
 
 # The lines marked DEBUG: are proposals for further fixes or improvements.
 # Other commented out code is historic and should probably be deleted if it is not going to be used.
@@ -22,6 +44,14 @@ class Screen(dict):
 	globalScreen = None
 
 	def __init__(self, session, parent=None, mandatoryWidgets=None):
+		self._screen_init_failed = False
+		try:
+			self._init_inner(session, parent, mandatoryWidgets)
+		except Exception as e:
+			self._screen_init_failed = True
+			_log_screen_exception(self, "construction", e)
+
+	def _init_inner(self, session, parent=None, mandatoryWidgets=None):
 		dict.__init__(self)
 		className = self.__class__.__name__
 		self.skinName = className
@@ -57,12 +87,24 @@ class Screen(dict):
 		self.screenPath = ""  # This is the current screen path without the title.
 		self.screenTitle = ""  # This is the current screen title without the path.
 		self.handledWidgets = []
+		self.screenImage =  []
 		self.setImage(className)
 
 	def __repr__(self):
 		return str(type(self))
 
 	def execBegin(self):
+		try:
+			self._execBegin_inner()
+		except Exception as e:
+			_log_screen_exception(self, "execBegin", e)
+			# A screen that fails to open must not stay on the stack.
+			try:
+				self.close()
+			except Exception:
+				pass
+
+	def _execBegin_inner(self):
 		self.active_components = []
 		if self.close_on_next_exec is not None:
 			tmp = self.close_on_next_exec
@@ -73,38 +115,68 @@ class Screen(dict):
 			single = self.onFirstExecBegin
 			self.onFirstExecBegin = []
 			for x in self.onExecBegin + single:
-				x()
+				try:
+					x()
+				except Exception as e:
+					_log_screen_exception(self, "onExecBegin/onFirstExecBegin callback", e)
 				# DEBUG: if not self.standAlone and self.session.current_dialog != self:
 				if not self.stand_alone and self.session.current_dialog != self:
 					return
 			# assert self.session is None, "a screen can only exec once per time"
 			# self.session = session
 			for val in list(self.values()) + self.renderer:
-				val.execBegin()
+				try:
+					val.execBegin()
+				except Exception as e:
+					_log_screen_exception(self, "component execBegin", e)
 				# DEBUG: if not self.standAlone and self.session.current_dialog != self:
 				if not self.stand_alone and self.session.current_dialog != self:
 					return
 				self.active_components.append(val)
 			self.execing = True
 			for x in self.onShown:
-				x()
+				try:
+					x()
+				except Exception as e:
+					_log_screen_exception(self, "onShown callback", e)
 
 	def execEnd(self):
+		try:
+			self._execEnd_inner()
+		except Exception as e:
+			_log_screen_exception(self, "execEnd", e)
+
+	def _execEnd_inner(self):
 		active_components = self.active_components
 		# for (name, val) in self.items():
 		self.active_components = []
 		for val in active_components:
-			val.execEnd()
+			try:
+				val.execEnd()
+			except Exception as e:
+				_log_screen_exception(self, "component execEnd", e)
 		# assert self.session is not None, "execEnd on non-execing screen!"
 		# self.session = None
 		self.execing = False
 		for x in self.onExecEnd:
-			x()
+			try:
+				x()
+			except Exception as e:
+				_log_screen_exception(self, "onExecEnd callback", e)
 
 	def doClose(self):  # Never call this directly - it will be called from the session!
+		try:
+			self._doClose_inner()
+		except Exception as e:
+			_log_screen_exception(self, "doClose", e)
+
+	def _doClose_inner(self):
 		self.hide()
 		for x in self.onClose:
-			x()
+			try:
+				x()
+			except Exception as e:
+				_log_screen_exception(self, "onClose callback", e)
 		del self.helpList  # Fixup circular references.
 		self.deleteGUIScreen()
 		# First disconnect all render from their sources. We might split this out into
@@ -125,6 +197,14 @@ class Screen(dict):
 			self.session.close(self, *retval)
 
 	def show(self):
+		if getattr(self, "_screen_init_failed", False):
+			print("[Screen] refusing to show '%s' due to failed construction"
+				% self.__class__.__name__)
+			try:
+				self.close()
+			except Exception:
+				pass
+			return
 		print("[Screen] Showing screen '%s'." % self.skinName)  # To ease identification of screens.
 		# DEBUG: if (self.shown and self.alreadyShown) or not self.instance:
 		if (self.shown and self.already_shown) or not self.instance:
@@ -133,11 +213,21 @@ class Screen(dict):
 		# DEBUG: self.alreadyShown = True
 		self.already_shown = True
 		self.instance.show()
-		for x in self.onShow:
-			x()
+
+		# Run onShow callbacks independently.
+		# A plugin exception must not crash the Enigma2 GUI.
+		for x in list(self.onShow):
+			try:
+				x()
+			except Exception as e:
+				_log_screen_exception(self, "onShow callback", e)
+
 		for val in list(self.values()) + self.renderer:
 			if isinstance(val, GUIComponent) or isinstance(val, Source):
-				val.onShow()
+				try:
+					val.onShow()
+				except Exception as e:
+					_log_screen_exception(self, "component onShow", e)
 
 	def hide(self):
 		if not self.shown or not self.instance:
@@ -145,10 +235,16 @@ class Screen(dict):
 		self.shown = False
 		self.instance.hide()
 		for x in self.onHide:
-			x()
+			try:
+				x()
+			except Exception as e:
+				_log_screen_exception(self, "onHide callback", e)
 		for val in list(self.values()) + self.renderer:
 			if isinstance(val, GUIComponent) or isinstance(val, Source):
-				val.onHide()
+				try:
+					val.onHide()
+				except Exception as e:
+					_log_screen_exception(self, "component onHide", e)
 
 	def getScreenPath(self):
 		return self.screenPath
@@ -194,7 +290,10 @@ class Screen(dict):
 					self["Image"] = Pixmap()
 
 	def setFocus(self, o):
-		self.instance.setFocus(o.instance)
+		try:
+			self.instance.setFocus(o.instance)
+		except Exception as e:
+			_log_screen_exception(self, "setFocus", e)
 
 	def setKeyboardModeNone(self):
 		rcinput = eRCInput.getInstance()
@@ -229,18 +328,32 @@ class Screen(dict):
 		return None
 
 	def callLater(self, function):
+		def _safe_call():
+			try:
+				function()
+			except Exception as e:
+				_log_screen_exception(self, "callLater callback", e)
 		self.__callLaterTimer = eTimer()
-		self.__callLaterTimer.callback.append(function)
+		self.__callLaterTimer.callback.append(_safe_call)
 		self.__callLaterTimer.start(0, True)
 
 	def screenContentChanged(self):
 		for f in self.onContentChanged:
-			if not isinstance(f, type(self.close)):
-				exec(f, globals(), locals())
-			else:
-				f()
+			try:
+				if not isinstance(f, type(self.close)):
+					exec(f, globals(), locals())
+				else:
+					f()
+			except Exception as e:
+				_log_screen_exception(self, "onContentChanged callback", e)
 
 	def applySkin(self):
+		try:
+			self._applySkin_inner()
+		except Exception as e:
+			_log_screen_exception(self, "applySkin", e)
+
+	def _applySkin_inner(self):
 		self.scale = ((getDesktop(GUI_SKIN_ID).size().width(), getDesktop(GUI_SKIN_ID).size().width()), (getDesktop(GUI_SKIN_ID).size().height(), getDesktop(GUI_SKIN_ID).size().height()))
 		zPosition = 0
 		for (key, value) in self.skinAttributes:
@@ -286,11 +399,21 @@ class Screen(dict):
 			applyAllAttributes(w.instance, desktop, w.skinAttributes, self.scale)
 		if self.screenImage:
 			self["Image"].setPixmap(LoadPixmap(self.screenImage))
-		for f in self.onLayoutFinish:
-			if not isinstance(f, type(self.close)):
-				exec(f, globals(), locals())
-			else:
-				f()
+
+		# Run layout-finish callbacks independently. A failing plugin callback
+		# must not prevent the screen from being displayed.
+		for f in list(self.onLayoutFinish):
+			try:
+				if not isinstance(f, type(self.close)):
+					# Preserve the custom locals needed by skin applets.
+					custom_locals = locals().copy()
+					custom_locals['autoresize'] = autoresize
+					exec(f, globals(), custom_locals)
+				else:
+					f()
+			except Exception as e:
+				_log_screen_exception(self, "onLayoutFinish callback", e)
+
 		for key in self:  # nudge TemplatedMultiContent so receives self.scale set above
 			val = self[key]
 			if "Components.Converter.TemplatedMultiContent" in str(getattr(val, "downstream_elements", None)):
