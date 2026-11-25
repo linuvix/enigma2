@@ -747,18 +747,37 @@ class PluginBrowser(Screen, ProtectedScreen):
         return PluginBrowserSummary
 
     def selectionChanged(self):
+        if self.is_grid_mode:
+            return
+
+        item = self["list"].getCurrent()
+
+        if item:
+            p = item[0]
+            name = p.name
+            desc = p.description
+            self["plugin_description"].setText(desc)
+        else:
+            name = "-"
+            desc = ""
+
+        for cb in self.onChangedEntry:
+            cb(name, desc)
+
+    def updateGridSummary(self):
         if not self.is_grid_mode:
-            item = self["list"].getCurrent()
-            if item:
-                p = item[0]
-                name = p.name
-                desc = p.description
-                self["plugin_description"].setText(desc)
-            else:
-                name = "-"
-                desc = ""
-            for cb in self.onChangedEntry:
-                cb(name, desc)
+            return
+
+        if self.plugins and self.current < len(self.plugins):
+            plugin = self.plugins[self.current]
+            name = plugin[0]
+            desc = plugin[1] or ""
+        else:
+            name = "-"
+            desc = ""
+
+        for cb in self.onChangedEntry:
+            cb(name, desc)
 
     def scheduleWarnings(self):
         """Show plugin warnings after Enigma2 has restored this screen."""
@@ -1076,6 +1095,7 @@ class PluginBrowser(Screen, ProtectedScreen):
 
         self.paint_hide()
         self.currentPage()
+        self.updateGridSummary()
 
     def currentPage(self):
         self['pages'].setText("Page {}/{}".format(self.current_page + 1, self.total_pages))
