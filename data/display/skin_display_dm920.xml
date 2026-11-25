@@ -168,11 +168,13 @@
         <widget font="Regular;34" backgroundColor="#40000000" foregroundColor="#ffffff" halign="center" position="0,0" render="Label" size="400,240" source="parent.lcdinfo" valign="center" transparent="0" />
     </screen>
 
-    <!--PluginBrowserSummary-->
+    <!-- PluginBrowserSummary -->
     <screen name="PluginBrowserSummary" position="fill">
-        <widget source="parent.Title" render="Label" position="top" size="*,26" font="Regular;20" noWrap="1" />
-        <widget source="entry" render="Label" position="top" size="*,61" font="Regular;38" halign="left" />
-        <widget source="desc" render="Label" position="fill" font="Regular;38" valign="top" />
+        <eLabel position="0,0" size="400,240" backgroundColor="#40000000" zPosition="-2" />
+        <widget source="parent.Title" render="Label" position="8,4" size="384,32" font="Regular;24" foregroundColor="#adff2f" halign="center" valign="center" noWrap="1" />
+        <widget source="entry" render="Label" position="8,44" size="384,48" font="Regular;32" foregroundColor="#ffffff" halign="center" valign="center" noWrap="1" />
+        <ePixmap pixmap="/usr/share/enigma2/display/skin_default/line-lcd.png" position="8,102" size="384,3" />
+        <widget source="desc" render="Label" position="10,114" size="380,118" font="Regular;28" foregroundColor="#adff2f" halign="center" valign="top" transparent="0" />
     </screen>
 
     <screen name="MoviePlayer_summary" position="fill">
