@@ -224,9 +224,6 @@ struct gOpcode
 #define MAXSIZE 2048
 
 /* gRC is the singleton which controls the fifo and dispatches commands */
-#include <deque>
-#include <chrono>
-
 class gRC : public iObject, public sigc::trackable
 {
 	DECLARE_REF(gRC);
@@ -243,10 +240,6 @@ class gRC : public iObject, public sigc::trackable
 
 	gOpcode queue[MAXSIZE];
 	int rp, wp;
-
-	/* submit time of every flush that is queued or being rendered, oldest first: its size is the number
-	 * of frames the render thread is behind. Guarded by the same mutex as the queue. */
-	std::deque<std::chrono::steady_clock::time_point> m_flush_pending;
 
 	eFixedMessagePump<int> m_notify_pump;
 	void recv_notify(const int &i);
@@ -268,9 +261,6 @@ public:
 	virtual ~gRC();
 
 	void submit(const gOpcode &o);
-
-	/* number of frames submitted but not yet taken up by the render thread */
-	int pendingFrames();
 
 #ifdef CONFIG_ION
 	void lock();
@@ -348,8 +338,7 @@ public:
 		BT_HALIGN_CENTER = 16,
 		BT_HALIGN_RIGHT = 32,
 		BT_VALIGN_CENTER = 64,
-		BT_VALIGN_BOTTOM = 128,
-		BT_PRELOAD_TEXTURE = 256 /* draws nothing: the EGL backend only uploads the texture */
+		BT_VALIGN_BOTTOM = 128
 	};
 
 	enum
@@ -469,7 +458,7 @@ public:
 	// per-instance border/rotated "image" glyphs, which have no such stable,
 	// reusable identity to cache against. Return true to skip the existing
 	// CPU compositing loop entirely for this glyph.
-	virtual bool renderGlyph(const ePoint &pos, const uint8_t *data, int width, int height, int pitch, const gRGB &color, uint64_t glyph_key) { return false; }
+	virtual bool renderGlyph(const ePoint &, const uint8_t *, int, int, int, const gRGB &, uint64_t) { return false; }
 
 	// Called by eTextPara::blit() immediately before it falls back to
 	// writing glyph pixels directly into m_pixmap's CPU buffer (renderGlyph()
