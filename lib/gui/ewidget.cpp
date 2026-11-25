@@ -560,7 +560,7 @@ void eWidget::setBackgroundGradient(const gRGB &startcolor, const gRGB &midcolor
 	invalidate();
 }
 
-void eWidget::setCornerRadius(int radius, uint8_t edges)
+void eWidget::setCornerRadius(int radius, int edges)
 {
 	m_cornerRadius = radius;
 	m_cornerRadiusEdges = edges;

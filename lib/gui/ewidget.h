@@ -185,7 +185,7 @@ public:
 
 	void setBackgroundGradient(const gRGB &startcolor, const gRGB &midcolor, const gRGB &endcolor, uint8_t direction, bool alphablend);
 
-	void setCornerRadius(int radius, uint8_t edges);
+	void setCornerRadius(int radius, int edges);
 	uint8_t getCornerRadiusEdges() {return m_cornerRadiusEdges;}
 	int getCornerRadius();
 
