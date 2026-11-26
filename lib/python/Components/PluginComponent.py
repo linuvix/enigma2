@@ -3,6 +3,7 @@ from bisect import insort
 from Tools.Directories import fileExists, resolveFilename, SCOPE_PLUGINS
 from Tools.Import import my_import
 from Tools.Profile import profile
+from Components.MultiContentCompat import installMultiContentCompat
 from Plugins.Plugin import PluginDescriptor
 import keymapparser
 
@@ -55,6 +56,9 @@ class PluginComponent:
 						profile('plugin ' + pluginname)
 						try:
 							plugin = my_import('.'.join(["Plugins", c, pluginname, "plugin"]))
+
+							installMultiContentCompat()
+
 							plugins = plugin.Plugins(path=path)
 						except Exception as exc:
 							print("Plugin ", c + "/" + pluginname, "failed to load:", exc)
