@@ -14,9 +14,6 @@ class TemplatedMultiContent(StringList):
 		from Components.MultiContent import MultiContentEntryPixmap, MultiContentEntryPixmapAlphaBlend, MultiContentEntryPixmapAlphaTest, MultiContentEntryProgress, MultiContentEntryProgressPixmap, MultiContentEntryText, MultiContentTemplateColor
 
 		# --- Compatibility shim for OpenATV-style skins using BT_* alignment flags ---
-		# OpenPLi's enigma module does not export BT_HALIGN_* / BT_VALIGN_*.
-		# Try to import them; if unavailable, alias them to the corresponding RT_* constants.
-		# For pixmap entries these flags are effectively ignored, so aliasing is safe.
 		try:
 			from enigma import BT_HALIGN_CENTER, BT_HALIGN_LEFT, BT_HALIGN_RIGHT, BT_VALIGN_BOTTOM, BT_VALIGN_CENTER, BT_VALIGN_TOP
 		except ImportError:
@@ -30,11 +27,13 @@ class TemplatedMultiContent(StringList):
 
 		f = getSkinFactor()
 		loc = locals()
-		del loc["self"]  # Cleanup locals a bit.
+		del loc["self"]
 		del loc["args"]
+
 		self.active_style = None
 		self.template = eval(args, {}, loc)
 		self.scale = None
+
 		self.orientations = {
 			"orHorizontal": eListbox.orHorizontal,
 			"horizontal": eListbox.orHorizontal,
@@ -47,19 +46,24 @@ class TemplatedMultiContent(StringList):
 		# --- Lenient validation (OpenATV style) instead of hard asserts ---
 		if "fonts" not in self.template:
 			print("[TemplatedMultiContent] Error: All templates must include a 'fonts' entry!")
+
 		if "template" in self.template or "templates" in self.template:
 			if "template" in self.template or "default" in self.template.get("templates", {}):
-				if "template" not in self.template:  # Default template can be ["template"] or ["templates"]["default"].
+				if "template" not in self.template:
 					templateDefault = self.template["templates"]["default"]
-					self.template["template"] = templateDefault[1]  # mandatory
-					self.template["itemHeight"] = templateDefault[0]  # mandatory
-					if len(templateDefault) > 2:  # optional
+					self.template["template"] = templateDefault[1]
+					self.template["itemHeight"] = templateDefault[0]
+
+					if len(templateDefault) > 2:
 						self.template["selectionEnabled"] = templateDefault[2]
-					if len(templateDefault) > 3:  # optional
+
+					if len(templateDefault) > 3:
 						self.template["scrollbarMode"] = templateDefault[3]
-					if len(templateDefault) > 5:  # optional, but, must be present together
+
+					if len(templateDefault) > 5:
 						self.template["itemWidth"] = templateDefault[4]
 						self.template["orientation"] = templateDefault[5]
+
 				if "itemHeight" not in self.template and "itemSize" not in self.template:
 					print("[TemplatedMultiContent] Error: All 'template' entries must include an 'itemHeight' or 'itemSize' entry!")
 			else:
@@ -68,33 +72,58 @@ class TemplatedMultiContent(StringList):
 			print("[TemplatedMultiContent] Error: All TemplatedMultiContent converters must include either a 'template' or 'templates' entry!")
 		# ------------------------------------------------------------------
 
+	# --- MultiStalkerPro gFont compatibility workaround ---
+	def _safeSetFont(self, index, font):
+		try:
+			return self.content.setFont(index, font)
+		except Exception as error:
+			if "gFont" in str(error):
+				print(
+					"[MultiStalkerPro compat] "
+					"Skipped incompatible gFont:",
+					error
+				)
+				return None
+			raise
+	# -------------------------------------------------------
+
 	def changed(self, what):
 		if not self.content:
 			from enigma import eListboxPythonMultiContent
 			self.content = eListboxPythonMultiContent()
-			for index, font in enumerate(self.template["fonts"]):  # Setup fonts (also given by source).
-				self.content.setFont(index, font)
-		if what[0] == self.CHANGED_SPECIFIC and what[1] == "style":  # If only template changed, don't reload list.
+
+			for index, font in enumerate(self.template["fonts"]):
+				self._safeSetFont(index, font)
+
+		if what[0] == self.CHANGED_SPECIFIC and what[1] == "style":
 			pass
 		elif self.source:
 			if self.scale is None and isinstance(self.master, Listbox) and (scale := getattr(self.master, "scale", None)):
 				self.scale = scale
 				self.active_style = None
+
 			self.content.setList(self.source.list)
+
 		self.setTemplate()
 		self.downstream_elements.changed(what)
 
 	def scaleTemplate(self, template, itemheight, itemwidth):
 		from enigma import gFont
+
 		scaleFactorVertical = self.scale[1][0] / self.scale[1][1]
 		scaleFactorHorizontal = self.scale[0][0] / self.scale[0][1]
+
 		itemheight = int(itemheight * scaleFactorVertical)
+
 		if itemwidth is not None:
 			itemwidth = int(itemwidth * scaleFactorHorizontal)
+
 		scaledtemplate = []
 		fonts = []
+
 		for font in self.template["fonts"]:
 			fonts.append(gFont(font.family, int(font.pointSize * scaleFactorVertical)))
+
 		for content in template:
 			elments = list(content)
 			elments[1] = int(elments[1] * scaleFactorVertical)
@@ -102,50 +131,63 @@ class TemplatedMultiContent(StringList):
 			elments[3] = int(elments[3] * scaleFactorVertical)
 			elments[4] = int(elments[4] * scaleFactorHorizontal)
 			scaledtemplate.append(tuple(elments))
+
 		return scaledtemplate, itemheight, itemwidth, fonts
 
 	def setTemplate(self):
 		if self.source:
 			style = self.source.style
+
 			if style == self.active_style:
 				return
-			templates = self.template.get("templates")  # If skin defined "templates", that means that it defines multiple styles in a dict. template should still be a default.
+
+			templates = self.template.get("templates")
 			template = self.template.get("template")
 			itemheight = self.template.get("itemHeight")
 			itemwidth = self.template.get("itemWidth")
 			orientation = self.template.get("orientation")
 			selectionEnabled = self.template.get("selectionEnabled", True)
 			scrollbarMode = self.template.get("scrollbarMode", "showOnDemand")
+
 			# Support OpenATV-style itemSize tuple
 			if "itemSize" in self.template:
 				sz = self.template["itemSize"]
+
 				if isinstance(sz, (tuple, list)):
 					itemwidth, itemheight = sz[0], sz[1]
 				else:
 					itemwidth = itemheight = sz
-			if templates and style and style in templates:  # If we have a custom style defined in the source, and different templates in the skin, look it up
-				# "template" and "itemheight"/"itemSize" are mandatory. selectionEnabled, scrollbarMode, itemwidth, and orientation are optional.
+
+			if templates and style and style in templates:
 				template = templates[style][1]
+
 				if isinstance(templates[style][0], (tuple, list)):
 					itemwidth, itemheight = templates[style][0][0], templates[style][0][1]
 				else:
 					itemheight = templates[style][0]
+
 				if len(templates[style]) > 2 and templates[style][2] is not None:
 					selectionEnabled = templates[style][2]
+
 				if len(templates[style]) > 3 and templates[style][3] is not None:
 					scrollbarMode = templates[style][3]
-				if len(templates[style]) > 5:  # optional, but, must be present together
+
+				if len(templates[style]) > 5:
 					itemwidth = templates[style][4]
 					orientation = templates[style][5]
 
 			if self.scale is not None and (self.scale[0][0] != self.scale[0][1] or self.scale[1][0] != self.scale[1][1]):
 				template, itemheight, itemwidth, fonts = self.scaleTemplate(template, itemheight, itemwidth)
+
 				for index, font in enumerate(fonts):
-					self.content.setFont(index, font)
+					self._safeSetFont(index, font)
+
 			self.content.setTemplate(template)
+
 			if orientation is not None and itemwidth is not None:
 				self.content.setOrientation(self.orientations.get(orientation, self.orientations["orVertical"]))
 				self.content.setItemWidth(int(itemwidth))
+
 			self.content.setItemHeight(int(itemheight))
 			self.selectionEnabled = selectionEnabled
 			self.scrollbarMode = scrollbarMode
