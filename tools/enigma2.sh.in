@@ -41,9 +41,6 @@ while : ; do
 		@bindir@/enigma2_pre_start.sh
 	fi
 
-	# Force GPU spinner rendering (test)
-	export ENIGMA_EGL_SPINNER_GPU=1
-
 	# start enigma
 	sync
 	if [ "$DEBUG_LVL" -lt 4 ]; then
